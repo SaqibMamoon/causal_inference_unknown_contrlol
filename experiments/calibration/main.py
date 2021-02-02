@@ -18,6 +18,34 @@ from lib.linear_sem import ace, generate_data_from_dag, ace_grad
 from lib.relaxed_notears import relaxed_notears, mest_covarance, h
 
 
+def epsilon_star(w_true, L):
+    """Compute the dag-ness of the unconstrained minimum for a ceratin linear SEM
+    In the article, this is called epsilon_star
+    """
+    d_nodes = w_true.shape[0]
+    id = np.eye(d_nodes)
+    M = np.linalg.pinv(id - w_true.T)
+    noise_cov = np.eye(d_nodes)
+    data_cov = M @ noise_cov @ M.T
+    noise_prec = np.linalg.pinv(noise_cov)
+    Q = scipy.linalg.kron(noise_prec, data_cov)
+    sQrt = scipy.linalg.sqrtm(Q)
+    theta_unconstrained = np.linalg.pinv(sQrt @ L) @ sQrt @ id.T.flatten()
+    w_unconstrained = (L @ theta_unconstrained).reshape(d_nodes, d_nodes).T
+    h_unconstrained = h(w_unconstrained)
+    return h_unconstrained
+
+
+def check_epsilon(w_true, L_parametrization, general_options):
+    h_unconstrained = epsilon_star(w_true, L_parametrization)
+    print(f"The unconstrained solution has a dag-tolerance of {h_unconstrained}")
+    if h_unconstrained < general_options["dag_tolerance_epsilon"]:
+        raise ValueError(
+            "The chosen tolerance is too rough for this graph "
+            "- the confidence interval is invalid!"
+        )
+
+
 def run_experiment(general_options, notears_options):
     # Initialize
     #
@@ -31,30 +59,9 @@ def run_experiment(general_options, notears_options):
     L_parametrization = make_L_no_diag(d_nodes)
     w_initial = np.zeros((d_nodes, d_nodes))
     q = scipy.stats.norm.ppf(1 - np.array(general_options["confidence_level"]) / 2)
-
-    # Compute unconstrained minimum
     w_true = general_options["w_true"]
     d_nodes = w_true.shape[0]
-    id = np.eye(d_nodes)
-    M = np.linalg.pinv(id - w_true.T)
-    noise_cov = np.eye(d_nodes)
-    data_cov = M @ noise_cov @ M.T
-    noise_prec = np.linalg.pinv(noise_cov)
-    Q = scipy.linalg.kron(noise_prec, data_cov)
-    sQrt = scipy.linalg.sqrtm(Q)
-    theta_unconstrained = (
-        np.linalg.pinv(sQrt @ L_parametrization) @ sQrt @ id.T.flatten()
-    )
-    w_unconstrained = (
-        (L_parametrization @ theta_unconstrained).reshape(d_nodes, d_nodes).T
-    )
-    h_unconstrained = h(w_unconstrained)
-    print(f"The unconstrained solution has a dag-tolerance of {h_unconstrained}")
-    if h_unconstrained < general_options["dag_tolerance_epsilon"]:
-        raise ValueError(
-            "The chosen tolerance is too rough for this graph "
-            "- the confidence interval is invalid!"
-        )
+    check_epsilon(w_true, L_parametrization, general_options)
 
     print(
         "### START ###################################################################"
