@@ -12,5 +12,6 @@ Some dev-dependencies are included, notably `flake8` and `black`, but they are n
 1. Do linting using flake8, by `flake8` from command line (or via your IDE)
 1. Do formatting using black, by `black .` from command line (or via your IDE)
 
-To run any code, run `python ./experiments/<experiment_name>/main.py` from the root.
+To run any code, run `python ./experiments/<experiment_name>.py` **from the root**.
+Some of the experiments take command line options, e.g. `python ./experiments/<experiment_name>.py --option1=20`.
 Output is put in the `./output` folder.
