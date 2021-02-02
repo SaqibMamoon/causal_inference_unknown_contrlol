@@ -12,5 +12,6 @@ dependencies:
   - pandas=1.1.1
   - seaborn=0.11.0 # cen be removed?
   - networkx=2.5
+  - tqdm=4.56
   - pip:
     - --editable .
