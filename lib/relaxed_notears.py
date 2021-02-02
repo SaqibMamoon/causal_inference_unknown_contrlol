@@ -67,7 +67,12 @@ def make_notears_loss(sigma_hat: np.ndarray, L: np.ndarray, W_ref):
 
 
 def relaxed_notears(
-    data_cov: np.ndarray, L, W_initial, dag_tolerance: float, optim_opts=None
+    data_cov: np.ndarray,
+    L,
+    W_initial,
+    dag_tolerance: float,
+    optim_opts=None,
+    verbose=False,
 ) -> dict:
     """Get Notears solution with a guarantee of zero on diagonal, to accepted tolerance
     """
@@ -173,7 +178,7 @@ def relaxed_notears(
                     break
                 elif nit == nitermax:
                     break
-                if nit % log_every == 0:
+                if nit % log_every == 0 and verbose:
                     print(
                         f"nit={nit}\t|theta_and_s|={np.linalg.norm(theta_and_s_inner)}"
                         f"\trho={rho:.3g}\t|c|={current_constraint_violation}"
@@ -181,8 +186,9 @@ def relaxed_notears(
                     )
 
         if current_inner_constraint_violation < tolerated_constraint_violation:
-            message = "Found a feasible solution!"
-            print(message)
+            if verbose:
+                message = "Found a feasible solution!"
+                print(message)
             solved_complete = True
             running = False
         elif rho > rho_max:
@@ -214,7 +220,7 @@ def relaxed_notears(
     )
 
 
-def mest_covarance(W_hat, data_covariance, L_parametrization_matrix):
+def mest_covarance(W_hat, data_covariance, L_parametrization_matrix, verbose=False):
     """Compute the Least-squares precision matrix assuming:
     - Equality-constrained by a epsilon-relaxed h-function
     - Data generator has normally distributed noise (needed to skip estimating
@@ -266,18 +272,21 @@ def mest_covarance(W_hat, data_covariance, L_parametrization_matrix):
     estimator_covariance_mat = Kinv @ Pi @ J @ Pi @ Kinv.T
 
     # estimator_precision_mat = np.linalg.pinv(estimator_covariance_mat)
+    if verbose:
 
-    def log_matrix_stats(matrix_variable_name, matrix):
-        print(f"{matrix_variable_name} : {matrix}")
-        print(f"{matrix_variable_name} condition number: {np.linalg.cond(matrix)}")
-        eigvals = [a for a in sorted(np.linalg.eigvals(matrix), key=lambda l: abs(l))]
-        print(f"{matrix_variable_name} eigenvalues: {eigvals}")
-        print(f"{matrix_variable_name} rank: {np.linalg.matrix_rank(matrix)}")
+        def log_matrix_stats(matrix_variable_name, matrix):
+            print(f"{matrix_variable_name} : {matrix}")
+            print(f"{matrix_variable_name} condition number: {np.linalg.cond(matrix)}")
+            eigvals = [
+                a for a in sorted(np.linalg.eigvals(matrix), key=lambda l: abs(l))
+            ]
+            print(f"{matrix_variable_name} eigenvalues: {eigvals}")
+            print(f"{matrix_variable_name} rank: {np.linalg.matrix_rank(matrix)}")
 
-    log_matrix_stats("Pi", Pi)
-    log_matrix_stats("J", J)
-    log_matrix_stats("K", K)
-    log_matrix_stats("estimator_covariance_mat", estimator_covariance_mat)
-    # log_matrix_stats('estimator_precision_mat', estimator_precision_mat)
+        log_matrix_stats("Pi", Pi)
+        log_matrix_stats("J", J)
+        log_matrix_stats("K", K)
+        log_matrix_stats("estimator_covariance_mat", estimator_covariance_mat)
+        # log_matrix_stats('estimator_precision_mat', estimator_precision_mat)
 
     return estimator_covariance_mat
