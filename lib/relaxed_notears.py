@@ -5,6 +5,8 @@ import numpy as np
 import scipy.optimize
 import scipy.linalg
 
+from lib.linear_sem import intsqrt
+
 
 def h(W):
     # tr exp(W ◦ W) − d
@@ -17,20 +19,21 @@ def grad_h(W):
     return np.multiply(2 * W, scipy.linalg.expm(np.multiply(W, W)).transpose())
 
 
-def W_from_theta(theta, L_parametrization, W_ref):
-    d_nodes = W_ref.shape[0]
-    W_as_vec = L_parametrization @ theta
-    W = W_as_vec.reshape(d_nodes, d_nodes).T + W_ref
+def W_from_theta(theta, L_parametrization):
+    Wvec = L_parametrization @ theta
+    d2 = L_parametrization.shape[0]
+    d = intsqrt(d2)
+    W = Wvec.reshape(d, d).T
     return W
 
 
-def make_h_paramterized(M, W_ref):
+def make_h_paramterized(M):
     def h_from_v(v):
-        W = W_from_theta(v, M, W_ref)
+        W = W_from_theta(v, M)
         return h(W)
 
     def grad_h_from_v(v):
-        W = W_from_theta(v, M, W_ref)
+        W = W_from_theta(v, M)
         grad_w = grad_h(W)  # gradient with respect to the matrix W
         grad_v = grad_w.T.flatten() @ M  # vectorize and apply chain rule
         return grad_v
@@ -38,10 +41,10 @@ def make_h_paramterized(M, W_ref):
     return h_from_v, grad_h_from_v
 
 
-def make_notears_loss(sigma_hat: np.ndarray, L: np.ndarray, W_ref):
-    """Paramterized versions. From Remark 3.7 i mest.pdf note
+def make_notears_loss(sigma_hat: np.ndarray, L: np.ndarray):
+    """Paramterized versions. From Remark 3.7 i mest.pdf note but with Wref=0
 
-    a = L@v + vec(Wref) - vec(I)
+    a = L@v - vec(I)
 
     loss = 0.5 ( a.T @ (I kron SigmaHat) @ a)
     grad = L.T @ @ (I kron SigmaHat) @ a
@@ -51,16 +54,15 @@ def make_notears_loss(sigma_hat: np.ndarray, L: np.ndarray, W_ref):
     """
     id = np.eye(sigma_hat.shape[0])
     i = id.T.flatten()
-    vref = W_ref.T.flatten()
     Q = scipy.linalg.kron(id, sigma_hat)
 
     def notears_loss(v: np.ndarray):
         # logging.debug(f"{L},{v},{vref},{i}")
-        a = L @ v + vref - i
+        a = L @ v - i
         return a @ Q @ a / 2.0
 
     def notears_gradient(v: np.ndarray):
-        a = L @ v + vref - i
+        a = L @ v - i
         return L.T @ Q @ a
 
     return notears_loss, notears_gradient
@@ -78,10 +80,9 @@ def relaxed_notears(
     """
     opts = optim_opts.copy() if optim_opts else {}
 
-    W_ref = np.zeros(W_initial.shape)
-    f_fun, f_grad = make_notears_loss(data_cov, L, W_ref)
-    h_fun, h_grad = make_h_paramterized(L, W_ref)
-    theta_initial = np.linalg.pinv(L) @ (W_initial - W_ref).T.flatten()
+    f_fun, f_grad = make_notears_loss(data_cov, L)
+    h_fun, h_grad = make_h_paramterized(L)
+    theta_initial = np.linalg.pinv(L) @ W_initial.T.flatten()
 
     alpha_initial = 0.0  # lagrangian multiplier
     nitermax = opts.pop("nitermax", 100)
@@ -207,7 +208,7 @@ def relaxed_notears(
         # log.info("Stepping outer")
 
     theta_final = theta_inner
-    W_final = W_from_theta(theta_final, L, W_ref)
+    W_final = W_from_theta(theta_final, L)
     return dict(
         theta=theta_final,
         s=s,
@@ -225,7 +226,7 @@ def mest_covarance(W_hat, data_covariance, L_parametrization_matrix, verbose=Fal
     - Equality-constrained by a epsilon-relaxed h-function
     - Data generator has normally distributed noise (needed to skip estimating
         higher moments that covariance)
-    - the W matrix is parametrized by vec(W) = L*theta+vec(Wref)
+    - the W matrix is parametrized by vec(W) = L*theta
 
     the covariance matrix returned is the one for theta, not for W
     """
