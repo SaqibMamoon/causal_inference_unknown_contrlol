@@ -3,7 +3,7 @@ import scipy.linalg
 
 
 def intsqrt(d2):
-    """Takes the square root"""
+    """Takes the square root, and assert it is an int"""
     d = np.sqrt(d2)
     if d != int(d):
         raise ValueError("Supplied value is not a perfect square")
