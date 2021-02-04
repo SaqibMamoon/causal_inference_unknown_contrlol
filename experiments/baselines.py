@@ -81,7 +81,7 @@ def true_stuff(G):
 def run_experiment(opts):
 
     ress = []
-    for _ in trange(opts.repetitions):
+    for run in trange(opts.repetitions):
         G = simulate_random_dag(
             d=opts.d_nodes, degree=opts.node_multiplier * 2, graph_type="erdos-renyi",
         )
@@ -97,6 +97,7 @@ def run_experiment(opts):
             W_lingam, theta_lingam, ace_lingam = lingam_stuff(data)
             W_n, theta_n, ace_n, ace_n_se = notears_stuff(data, opts)
             resd = dict(
+                run=run,
                 sem_type=sem_type,
                 # W_true=W_true,
                 ace_true=ace_true,
@@ -118,16 +119,29 @@ if __name__ == "__main__":
 
     p = argparse.ArgumentParser()
     p.add_argument("--dag_tolerance", default=1e-7, help="The epsilon-value we aim for")
-    p.add_argument("--n_data", default=1000, help="The epsilon-value we aim for")
     p.add_argument(
-        "--repetitions", default=10, help="How many random dag comparisons do we do?"
-    )
-    p.add_argument("--d_nodes", default=10, help="How many nodes in the graph?")
-    p.add_argument(
-        "--confidence_level", default=0.05, help="What confidence (95% coverage ==> 5%"
+        "--n_data", default=1000, type=int, help="The epsilon-value we aim for"
     )
     p.add_argument(
-        "--node_multiplier", default=1, help="How many expected edges per node?"
+        "--repetitions",
+        default=10,
+        type=int,
+        help="How many random dag comparisons do we do?",
+    )
+    p.add_argument(
+        "--d_nodes", default=10, type=int, help="How many nodes in the graph?"
+    )
+    p.add_argument(
+        "--confidence_level",
+        default=0.05,
+        type=float,
+        help="What confidence (95% coverage ==> 5%",
+    )
+    p.add_argument(
+        "--node_multiplier",
+        default=1,
+        type=float,
+        help="How many expected edges per node?",
     )
     opts = p.parse_args()
     output_folder = pathlib.Path(
@@ -143,7 +157,7 @@ if __name__ == "__main__":
     df["q"] = scipy.stats.norm.ppf(1 - np.array(opts.confidence_level) / 2)
     df["err_n"] = df.ace_n - df.ace_true
     df["err_lingam"] = df.ace_lingam - df.ace_true
-    df_errs = df[["sem_type", "err_lingam", "err_n", "ace_true"]]
+    df_errs = df[["sem_type", "err_lingam", "err_n", "ace_true", "ace_n", "ace_lingam"]]
     df_rmse = np.sqrt(
         df_errs.groupby("sem_type").mean() ** 2 + df_errs.groupby("sem_type").var()
     )
