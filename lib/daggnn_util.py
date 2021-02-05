@@ -126,4 +126,3 @@ def simulate_sem(
             + np.random.normal(scale=noise_scale, size=(n, d))
         )
     return X
-
