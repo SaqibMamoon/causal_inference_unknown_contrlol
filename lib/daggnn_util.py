@@ -1,5 +1,5 @@
 """
-Excerpt from https://raw.githubusercontent.com/fishmoon1234/DAG-GNN/373d8d2fbb299d2cf2f2590251d6049de9607e24/src/utils.py
+Excerpt from https://raw.githubusercontent.com/fishmoon1234/DAG-GNN/373d8d2fbb299d2cf2f2590251d6049de9607e24/src/utils.py # noqa: E501
 
 This is the data generation procedures from yu2019dag
 
