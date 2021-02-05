@@ -6,12 +6,14 @@ the point estimate is approximately normal.
 import datetime
 import os
 import itertools
+from pathlib import Path
 
 import numpy as np
 import scipy.stats
 import scipy.linalg
 import pandas as pd
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 from lib.linear_algebra import make_L_no_diag
 from lib.linear_sem import ace, generate_data_from_dag, ace_grad
@@ -50,8 +52,8 @@ def run_experiment(general_options, notears_options):
     # Initialize
     #
     seed = 123456
-    output_folder = (
-        f"output/calibration_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+    output_folder = Path(
+        "output", f"calibration_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
     )
     os.makedirs(output_folder)
     t_start = datetime.datetime.now()
@@ -94,10 +96,13 @@ def run_experiment(general_options, notears_options):
     )
 
     result_dicts = []
-    for n_data, rep in itertools.product(
-        general_options["m_obss"], range(general_options["no_of_repetitions"])
+    for n_data, rep in tqdm(
+        itertools.product(
+            general_options["m_obss"], range(general_options["repititions"])
+        ),
+        total=len(general_options["m_obss"]) * general_options["repititions"],
     ):
-        print(f"Running repetition {n_data, rep}")
+        # print(f"Running repetition {n_data, rep}")
 
         data = generate_data_from_dag(
             m_obs=n_data, W=general_options["w_true"], seed=rep
@@ -151,7 +156,10 @@ def run_experiment(general_options, notears_options):
     df = pd.DataFrame(result_dicts)
 
     emp_capture = df[["n", "covered_ace_circ"]].groupby("n").covered_ace_circ.mean()
-    print(f"The empirical capture rate per amount of data was {emp_capture}")
+    s = f"The empirical capture rate per amount of data was\n {emp_capture}"
+    print(s)
+    with open(output_folder.joinpath("capture_rates.txt"), "w") as f:
+        f.write(s + "\n")
 
     fig = plt.figure(num=99)
     ax = fig.subplots()
@@ -188,8 +196,8 @@ def run_experiment(general_options, notears_options):
     ax.legend()
     ax.set_xlabel("Theoretical Quantile")
     ax.set_ylabel("Actual Quantile")
-    fig.savefig(os.path.join(output_folder, "ace_normal_plot.png"))
-    plt.show()
+    fig.savefig(output_folder.joinpath("ace_normal_plot.png"))
+    # plt.show()
 
     for n in df.n.unique():
         shapiro_wilk_stat, shapiro_wilk_p = scipy.stats.shapiro(df["ace_n"][df.n == n])
@@ -201,9 +209,9 @@ def run_experiment(general_options, notears_options):
 
     df["k"] = df.n.map({v: k for k, v in enumerate(df.n.unique())})
     df.pivot(index="ace_n_theoretical_z", columns="k", values="ace_n_z").to_csv(
-        os.path.join(output_folder, "calibration_qq.csv")
+        output_folder.joinpath("calibration_qq.csv")
     )
-    df.to_csv(os.path.join(output_folder, "results.csv"))
+    df.to_csv(output_folder.joinpath("results.csv"))
 
     #   Wrap up
     #
@@ -230,7 +238,7 @@ if __name__ == "__main__":
             [0.0, 0.0, 0.0, 0.0],
         ]
     )
-    general_options["no_of_repetitions"] = 3
+    general_options["repititions"] = 1000
 
     notears_options = dict()
     notears_options["nitermax"] = 1000
