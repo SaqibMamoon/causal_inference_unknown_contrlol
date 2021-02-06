@@ -1,7 +1,11 @@
 import argparse
 import datetime
+from lib.plotters import draw_graph
 import pathlib
 import os
+import itertools
+import pprint
+
 
 import numpy as np
 import pandas as pd
@@ -9,14 +13,29 @@ import lingam
 import scipy.stats
 import networkx as nx
 from tqdm import trange
+import matplotlib.pyplot as plt
+import colorama
+import seaborn as sns
 
-from lib.relaxed_notears import relaxed_notears, mest_covarance
+from lib.relaxed_notears import relaxed_notears, mest_covarance, ace_circ
 from lib.linear_sem import ace, ace_grad
-from lib.linear_algebra import make_L_no_diag
+from lib.linear_algebra import make_L_no_diag, make_Z_clear_first
 from lib.daggnn_util import simulate_random_dag, simulate_sem
 
+colorama.init()
+
+
 raw_fname = "raw.csv"
-summary_fname = "summary.tex"
+summary_fname = "summary.txt"
+config_fname = "config.txt"
+graph_fname = "graph.png"
+plot_fname = "summary.png"
+
+variances = {
+    "linear-gauss": 1,
+    "linear-exp": 1,
+    "linear-gumbel": np.pi ** 2 / 6,
+}
 
 
 def printt(*args):
@@ -24,23 +43,60 @@ def printt(*args):
 
 
 def main():
-    pass
+    tstart = datetime.datetime.now()
+    printt("Starting!")
+    output_folder = pathlib.Path(
+        "output", f"baselines_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+    )
+    os.makedirs(output_folder)
+
+    printt("Parsing options")
+    opts = parse_args()
+    pp = pprint.PrettyPrinter(indent=4)
+    with open(output_folder.joinpath(config_fname), "w") as f:
+        f.write("general_options\n")
+        f.write(pp.pformat(opts) + "\n")
+
+    printt("Running experiment")
+    raw_path = output_folder.joinpath(raw_fname)
+    df, W_true = run_experiment(opts)
+    df.to_csv(raw_path)
+    draw_graph(W_true, "Adjacency matrix for SEM", output_folder.joinpath(graph_fname))
+
+    printt("Processing experiment output")
+    post_process(output_folder)
+
+    printt("Done!")
+    tend = datetime.datetime.now()
+    printt(f"Total runtime was {tend-tstart}")
 
 
-def lingam_stuff(data):
+def lingam_once(data):
     model = lingam.DirectLiNGAM()
     model.fit(data)
     W = model.adjacency_matrix_.T
     d = W.shape[0]
-    L = make_L_no_diag(d)
-    Z = np.eye(d)
-    Z[0, 0] = 0
+    # L = make_L_no_diag(d)
+    Z = make_Z_clear_first(d)
     assert all(np.diag(W) == 0), "W matrix has nonzero diagonal - L not appropriate"
-    theta = np.linalg.pinv(L) @ W.T.flatten()
+    # theta = np.linalg.pinv(L) @ W.T.flatten()
     id = np.eye(d)
     M = np.linalg.pinv(id - Z @ W.T)
     ace = M[1, 0]
-    return W, theta, ace
+    return W, ace
+
+
+def lingam_stuff(data, opts):
+    W, ace = lingam_once(data)
+    aces = np.zeros(opts.n_bootstrap)
+    for b in trange(opts.n_bootstrap, desc="LiNGAM Bootstrap", leave=False):
+        bootstrap_samples = np.random.randint(opts.n_data, size=opts.n_data)
+        _, ace = lingam_once(data[bootstrap_samples, :])
+        aces[b] = ace
+    lo, hi = np.percentile(
+        aces, [100 * opts.confidence_level / 2, 100 - 100 * opts.confidence_level / 2]
+    )
+    return W, ace, lo, hi
 
 
 def notears_stuff(data: np.ndarray, opts: argparse.Namespace):
@@ -63,114 +119,179 @@ def notears_stuff(data: np.ndarray, opts: argparse.Namespace):
     )
     ace_standard_error = np.sqrt(ace_variance / opts.n_data)
     ace_value = ace(theta, L=L)
+    q = scipy.stats.norm.ppf(1 - opts.confidence_level / 2)
+    lo, hi = ace_value + ace_standard_error * np.array([-q, q])
+    return w, ace_value, ace_standard_error, lo, hi
 
-    return w, theta, ace_value, ace_standard_error
+
+def simulate_linear_sem(G, sem_type, n):
+    """Simulates a linear SEM as in DAG-GNN-article, and centers the data.
+    Forces the noise to have variance 1"""
+    data = simulate_sem(
+        G,
+        n=n,
+        x_dims=1,
+        sem_type=sem_type,
+        linear_type="linear",
+        noise_scale=1 / np.sqrt(variances[sem_type]),
+    ).squeeze()
+    data = data - data.mean(axis=0)
+    return data
 
 
-def true_stuff(G):
-    W = nx.to_numpy_array(G)
-    d = W.shape[0]
-    Z = np.eye(d)
-    Z[0, 0] = 0
-    id = np.eye(d)
-    M = np.linalg.pinv(id - Z @ W.T)
-    ace = M[1, 0]
-    return W, ace
+def generate_random_graph(opts):
+    ace = None
+    G = None
+    W = None
+    for seed in itertools.count(0):
+        np.random.seed(seed)
+        G = simulate_random_dag(
+            d=opts.d_nodes, degree=opts.node_multiplier * 2, graph_type="erdos-renyi",
+        )
+        W = nx.to_numpy_array(G)
+        d = W.shape[0]
+        Z = make_Z_clear_first(d)
+        id = np.eye(d)
+        M = np.linalg.pinv(id - Z @ W.T)
+        ace = M[1, 0]
+        if not np.isclose(ace, 0):
+            break
+    assert ace is not None
+    assert G is not None
+    assert W is not None
+    printt(f"Seed {seed} gave a graph of causal effect {ace}")
+    return G, W, ace
 
 
 def run_experiment(opts):
 
+    G, W_true, ace_true = generate_random_graph(opts)
+
     ress = []
-    for run in trange(opts.repetitions):
-        G = simulate_random_dag(
-            d=opts.d_nodes, degree=opts.node_multiplier * 2, graph_type="erdos-renyi",
+    for sem_type in ["linear-gauss", "linear-exp", "linear-gumbel"]:
+        W_our_lim, ace_our_lim = ace_circ(
+            W_true, np.eye(opts.d_nodes), opts.dag_tolerance
         )
-        for sem_type in ["linear-gaus", "linear-exp", "linear-gumbel"]:
-            W_true, ace_true = true_stuff(G)
-            data = simulate_sem(
-                G,
-                n=opts.n_data,
-                x_dims=1,
-                sem_type="linear-gauss",
-                linear_type="linear",
-            ).squeeze()
-            W_lingam, theta_lingam, ace_lingam = lingam_stuff(data)
-            W_n, theta_n, ace_n, ace_n_se = notears_stuff(data, opts)
-            resd = dict(
-                run=run,
-                sem_type=sem_type,
-                # W_true=W_true,
-                ace_true=ace_true,
-                # W_lingam=W_lingam,
-                # theta_lingam=theta_lingam,
-                ace_lingam=ace_lingam,
-                # W_n=W_n,
-                # theta_n=theta_n,
-                ace_n=ace_n,
-                ace_n_se=ace_n_se,
+        printt("Computing LiNGAM large data limit")
+        W_lingam_lim, ace_lingam_lim = lingam_once(
+            simulate_linear_sem(G, sem_type, opts.n_data_lingam_lim)
+        )
+        printt(f"Starting data draws for {sem_type}")
+        for data_draw in trange(opts.n_repetitions, desc=f"Running for {sem_type}"):
+            data = simulate_linear_sem(G, sem_type, opts.n_data)
+            (
+                W_lingam,
+                ace_lingam,
+                ace_ci_lingam_low,
+                ace_ci_lingam_high,
+            ) = lingam_stuff(data, opts)
+            ress.append(
+                dict(
+                    data_draw=data_draw,
+                    sem_type=sem_type,
+                    Method="LiNGAM",
+                    ace_true=ace_true,
+                    ace_lim=ace_lingam_lim,
+                    ace=ace_lingam,
+                    ace_ci_low=ace_ci_lingam_low,
+                    ace_ci_high=ace_ci_lingam_high,
+                    confidence_level=opts.confidence_level,
+                )
             )
-            ress.append(resd)
+            (
+                W_our,
+                ace_our,
+                ace_our_se,
+                ace_ci_our_low,
+                ace_ci_our_high,
+            ) = notears_stuff(data, opts)
+            ress.append(
+                dict(
+                    data_draw=data_draw,
+                    sem_type=sem_type,
+                    Method="our",
+                    ace_true=ace_true,
+                    ace_lim=ace_our_lim,
+                    ace=ace_our,
+                    ace_ci_low=ace_ci_our_low,
+                    ace_ci_high=ace_ci_our_high,
+                    confidence_level=opts.confidence_level,
+                )
+            )
 
     df = pd.DataFrame(ress)
-    return df
+    return df, W_true
 
 
-if __name__ == "__main__":
+def post_process(output_folder):
+    df = pd.read_csv(output_folder.joinpath(raw_fname))
+    df[f"ci_cover"] = (
+        (df[f"ace_ci_low"] < df[f"ace_lim"]) & (df[f"ace_ci_high"] > df[f"ace_lim"])
+    ).astype("float")
+    df[f"ci_width"] = df[f"ace_ci_high"] - df[f"ace_ci_low"]
+    summary = (
+        df[["sem_type", "Method", "ci_cover", "ci_width"]]
+        .groupby(["sem_type", "Method"])
+        .mean()
+    )
+    summ_path = output_folder.joinpath(summary_fname)
+    with open(summ_path, "w") as f:
+        f.write("Latex output\n")
+        s = summary.to_latex(float_format="%.2f")
+        f.write(s)
+        f.write("\n\n")
+        f.write("Easy readable output\n")
+        f.write(str(summary))
+    print(summary)
 
-    p = argparse.ArgumentParser()
+    sns.displot(df, row="Method", col="sem_type", x="ace")
+    plt.savefig(output_folder.joinpath(plot_fname))
+
+
+def parse_args():
+
+    p = argparse.ArgumentParser(
+        description="Compare our proposed method with baselines - currenctly LiNGAM",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     p.add_argument("--dag_tolerance", default=1e-7, help="The epsilon-value we aim for")
+    p.add_argument("--n_data", default=100, type=int, help="The number of data points")
     p.add_argument(
-        "--n_data", default=1000, type=int, help="The epsilon-value we aim for"
-    )
-    p.add_argument(
-        "--repetitions",
-        default=10,
+        "--n_data_lingam_lim",
+        default=100_000,
         type=int,
-        help="How many random dag comparisons do we do?",
+        help="Data points for the large-sample lingam computation",
     )
     p.add_argument(
-        "--d_nodes", default=10, type=int, help="How many nodes in the graph?"
+        "--n_repetitions",
+        default=100,
+        type=int,
+        help="How many data sets to draw from the graph per noise type?",
+    )
+    p.add_argument(
+        "--d_nodes", default=4, type=int, help="How many nodes in the graph?"
     )
     p.add_argument(
         "--confidence_level",
-        default=0.05,
+        default=0.1,
         type=float,
-        help="What confidence (95% coverage ==> 5%",
+        help="What confidence (90%% coverage ==> 10%%)",
+    )
+    p.add_argument(
+        "--n_bootstrap",
+        default=100,
+        type=int,
+        help="Number of bootstrap repetitions for LiNGAM",
     )
     p.add_argument(
         "--node_multiplier",
-        default=1,
+        default=1.5,
         type=float,
         help="How many expected edges per node?",
     )
     opts = p.parse_args()
-    output_folder = pathlib.Path(
-        "output", f"baselines_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
-    )
-    os.makedirs(output_folder)
+    return opts
 
-    raw_path = output_folder.joinpath(raw_fname)
-    df = run_experiment(opts)
-    df.to_csv(raw_path)
 
-    df = pd.read_csv(raw_path)
-    df["q"] = scipy.stats.norm.ppf(1 - np.array(opts.confidence_level) / 2)
-    df["err_n"] = df.ace_n - df.ace_true
-    df["err_lingam"] = df.ace_lingam - df.ace_true
-    df_errs = df[["sem_type", "err_lingam", "err_n", "ace_true", "ace_n", "ace_lingam"]]
-    df_rmse = np.sqrt(
-        df_errs.groupby("sem_type").mean() ** 2 + df_errs.groupby("sem_type").var()
-    )
-    df_mean_err = df_errs.groupby("sem_type").mean()
-    summ_path = output_folder.joinpath(summary_fname)
-    summary_df = pd.concat([df_rmse, df_mean_err], keys=["rms", "avg"], axis=1)
-    summary_df.set_index(
-        summary_df.index.map(
-            {"linear-gaus": "Normal", "linear-exp": "Exp", "linear-gumbel": "Gumbel"}
-        ),
-        inplace=True,
-    )
-    summary_df.index.name = "Noise"
-    with open(summ_path, "w") as f:
-        s = summary_df.transpose().to_latex(float_format="%.2f")
-        f.write(s)
+if __name__ == "__main__":
+    main()

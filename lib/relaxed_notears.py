@@ -5,7 +5,8 @@ import numpy as np
 import scipy.optimize
 import scipy.linalg
 
-from lib.linear_sem import intsqrt
+from lib.linear_sem import intsqrt, ace
+from lib.linear_algebra import make_L_no_diag
 
 
 def h(W):
@@ -291,3 +292,22 @@ def mest_covarance(W_hat, data_covariance, L_parametrization_matrix, verbose=Fal
         # log_matrix_stats('estimator_precision_mat', estimator_precision_mat)
 
     return estimator_covariance_mat
+
+
+def ace_circ(W, noise_cov, dag_tolerance):
+    """Solve the relaxed NOTEARS problem in the infinite-data limit
+    
+    returns W_circ and ace_circ"""
+    d = W.shape[0]
+    id = np.eye(d)
+    M = np.linalg.pinv(id - W.T)
+    data_cov = M @ noise_cov @ M.T  # if noise has covariance matrix id
+    L = make_L_no_diag(d)
+    res = relaxed_notears(
+        data_cov, L=L, W_initial=np.zeros((d, d)), dag_tolerance=dag_tolerance,
+    )
+    assert res["success"]
+    W_circ = res["w"]
+    theta = res["theta"]
+    ace_circ = ace(theta, L=L)
+    return W_circ, ace_circ

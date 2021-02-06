@@ -12,9 +12,10 @@ dependencies:
   - pandas=1.1.1
   - seaborn=0.11.0
   - networkx=2.5
-  - tqdm=4.56
   - statsmodels=0.12.1 # this is really a lingam dependency, but I put it here since they have a broken setup.py file...
   - jinja2=2.11.3 # optional pandas dep for nice output
+  - tqdm=4.56 # nice progress bar
+  - colorama=0.4.4 # for nice nested progress bars onwindows
   - pip:
     - lingam==1.5.1
     - --editable .
