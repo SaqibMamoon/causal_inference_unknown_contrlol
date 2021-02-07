@@ -222,21 +222,30 @@ def relaxed_notears(
     )
 
 
-def mest_covarance(W_hat, data_covariance, L_parametrization_matrix, verbose=False):
-    """Compute the Least-squares precision matrix assuming:
+def mest_covarance(
+    W_hat,
+    data_covariance,
+    L_parametrization_matrix,
+    normal: bool = True,
+    verbose=False,
+) -> np.ndarray:
+    """Compute the Least-squares covariance matrix assuming:
     - Equality-constrained by a epsilon-relaxed h-function
-    - Data generator has normally distributed noise (needed to skip estimating
-        higher moments that covariance)
     - the W matrix is parametrized by vec(W) = L*theta
+    
+    Args:
+      normal: use Isserlis theorem to compute 4th cross moment
 
-    the covariance matrix returned is the one for theta, not for W
+    Returns:
+        the covariance matrix for sqrt(n)*(theta_n - theta_circ)
     """
 
     # aliases and simple variabels
     d = W_hat.shape[0]
     d2 = d ** 2
     id = np.eye(d)
-    sigma = data_covariance
+    noise_cov = id
+    data_cov = data_covariance
     W_I = W_hat - id
     L = L_parametrization_matrix
 
@@ -249,47 +258,36 @@ def mest_covarance(W_hat, data_covariance, L_parametrization_matrix, verbose=Fal
     for i, j in itertools.product(range(d), repeat=2):
         P[d * i + j, d * j + i] = 1
 
-    K_expected_loss_hessian = L.T @ scipy.linalg.kron(id, sigma) @ L
-
-    # simpler formula for J, valid when using Isserlis' theorem
-    J_score_covariance = (
-        L.T
-        @ (
-            scipy.linalg.kron(W_I.T @ sigma @ W_I, sigma)
-            + scipy.linalg.kron(W_I.T @ sigma, sigma @ W_I) @ P
-        )
-        @ L
+    K_expected_loss_hessian = (
+        L.T @ scipy.linalg.kron(np.linalg.inv(noise_cov), data_cov) @ L
     )
+
+    if normal:
+        # simpler formula for J, valid when using Isserlis' theorem and data is normal
+        Jtilde = (
+            scipy.linalg.kron(W_I.T @ data_cov @ W_I, data_cov)
+            + scipy.linalg.kron(W_I.T @ data_cov, data_cov @ W_I) @ P
+        )
+    else:
+        Jtilde = (
+            scipy.linalg.kron(W_I.T @ data_cov @ W_I, data_cov)
+            + scipy.linalg.kron(W_I.T @ data_cov, data_cov @ W_I) @ P
+        )
+        # raise NotImplementedError("4th cross moment estimation is a pain...")
+        warnings.warn("Incorrectly using normal assumption on data higher moments")
+    J_score_covariance = L.T @ Jtilde @ L
 
     grad_h_theta = grad_h(W_hat).T.flatten() @ L  # assume vec(W) = L@theta
     plane_normal_vec = grad_h_theta / np.linalg.norm(grad_h_theta, ord=2)
-    Pi_projector = np.eye(plane_normal_vec.size, plane_normal_vec.size) - np.einsum(
-        "i,j->ij", plane_normal_vec, plane_normal_vec
+    Pi_projector = np.eye(plane_normal_vec.size) - np.outer(
+        plane_normal_vec, plane_normal_vec
     )
 
     Pi = Pi_projector
     K = K_expected_loss_hessian
     Kinv = np.linalg.inv(K)
     J = J_score_covariance
-    estimator_covariance_mat = Kinv @ Pi @ J @ Pi @ Kinv.T
-
-    # estimator_precision_mat = np.linalg.pinv(estimator_covariance_mat)
-    if verbose:
-
-        def log_matrix_stats(matrix_variable_name, matrix):
-            print(f"{matrix_variable_name} : {matrix}")
-            print(f"{matrix_variable_name} condition number: {np.linalg.cond(matrix)}")
-            eigvals = [
-                a for a in sorted(np.linalg.eigvals(matrix), key=lambda l: abs(l))
-            ]
-            print(f"{matrix_variable_name} eigenvalues: {eigvals}")
-            print(f"{matrix_variable_name} rank: {np.linalg.matrix_rank(matrix)}")
-
-        log_matrix_stats("Pi", Pi)
-        log_matrix_stats("J", J)
-        log_matrix_stats("K", K)
-        log_matrix_stats("estimator_covariance_mat", estimator_covariance_mat)
-        # log_matrix_stats('estimator_precision_mat', estimator_precision_mat)
+    estimator_covariance_mat = Kinv @ Pi @ J @ Pi @ Kinv
 
     return estimator_covariance_mat
 
