@@ -14,3 +14,5 @@ To run any code, run `python ./experiments/<experiment_name>.py` **from the root
 Some of the experiments take command line options, e.g. `python ./experiments/<experiment_name>.py --option1=20`.
 Output is put in the `./output` folder.
 There is also a `run` command installed, so `run clean` will clean all the output.
+
+Test are written in `unittest` so `python -m unittest` will run them via discovery. Some tests has been removed since I didn't touch the code like in... forever...
