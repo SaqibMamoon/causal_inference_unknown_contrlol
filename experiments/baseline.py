@@ -143,7 +143,7 @@ def generate_random_graph(opts):
     for seed in itertools.count(0):
         np.random.seed(seed)
         G = simulate_random_dag(
-            d=opts.d_nodes, degree=opts.node_multiplier * 2, graph_type="erdos-renyi",
+            d=opts.d_nodes, degree=opts.k_edge_multiplier * 2, graph_type="erdos-renyi",
         )
         W = nx.to_numpy_array(G)
         d = W.shape[0]
@@ -248,7 +248,9 @@ def parse_args():
         description="Compare our proposed method with baselines - currenctly LiNGAM",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("--dag_tolerance", default=1e-7, help="The epsilon-value we aim for")
+    p.add_argument(
+        "--dag_tolerance", default=1e-7, type=float, help="The epsilon-value we aim for"
+    )
     p.add_argument("--n_data", default=100, type=int, help="The number of data points")
     p.add_argument(
         "--n_data_lingam_lim",
@@ -278,7 +280,7 @@ def parse_args():
         help="Number of bootstrap repetitions for LiNGAM",
     )
     p.add_argument(
-        "--node_multiplier",
+        "--k_edge_multiplier",
         default=1.5,
         type=float,
         help="How many expected edges per node?",

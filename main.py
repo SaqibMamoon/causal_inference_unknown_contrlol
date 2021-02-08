@@ -19,7 +19,7 @@ def all_nonlinear():
         "--repetitions",
         "200",
         "--n_data",
-        "10000",
+        "1000",
         "--confidence_level",
         "0.05",
     ]
@@ -29,8 +29,26 @@ def all_nonlinear():
     subprocess.run(common + ["--d_nodes", "10", "--k_edge_multiplier", "2"])
 
 
+def baseline():
+    opts = [
+        "--dag_tolerance",
+        "1e-7",
+        "--confidence_level",
+        ".1",
+        "--n_data",
+        "100",
+        "--d_nodes",
+        "10",
+        "--k_edge_multiplier",
+        "1",
+        "--n_data_lingam_lim",
+        "1000000",
+    ]
+    subprocess.run(["exp-baseline"] + opts)
+
+
 def main():
-    cmds = {"clean": clean, "nonlinears": all_nonlinear}
+    cmds = {"clean": clean, "nonlinear": all_nonlinear, "baseline": baseline}
 
     p = argparse.ArgumentParser()
     p.add_argument("cmd", type=str, choices=cmds.keys())
