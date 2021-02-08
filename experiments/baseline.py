@@ -54,8 +54,8 @@ def main():
     opts = parse_args()
     pp = pprint.PrettyPrinter(indent=4)
     with open(output_folder.joinpath(config_fname), "w") as f:
-        f.write("general_options\n")
-        f.write(pp.pformat(opts) + "\n")
+        f.write(pp.pformat(vars(opts)) + "\n")
+    printt("Config:\n" + pp.pformat(vars(opts)))
 
     printt("Running experiment")
     raw_path = output_folder.joinpath(raw_fname)
@@ -140,9 +140,6 @@ def simulate_linear_sem(G, sem_type, n):
 
 
 def generate_random_graph(opts):
-    ace = None
-    G = None
-    W = None
     for seed in itertools.count(0):
         np.random.seed(seed)
         G = simulate_random_dag(
@@ -155,12 +152,8 @@ def generate_random_graph(opts):
         M = np.linalg.pinv(id - Z @ W.T)
         ace = M[1, 0]
         if not np.isclose(ace, 0):
-            break
-    assert ace is not None
-    assert G is not None
-    assert W is not None
-    printt(f"Seed {seed} gave a graph of causal effect {ace}")
-    return G, W, ace
+            printt(f"Seed {seed} gave a graph of causal effect {ace}")
+            return G, W, ace
 
 
 def run_experiment(opts):
