@@ -6,22 +6,22 @@ from pathlib import Path
 import warnings
 import argparse
 import pprint
+import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.linalg
 import scipy.stats
-import datetime
 import pandas as pd
 import seaborn as sns
 from tqdm import tqdm
 
 from lib.daggnn_util import simulate_random_dag, simulate_sem
 from lib.linear_algebra import make_L_no_diag
-from lib.relaxed_notears import relaxed_notears, mest_covarance
 from lib.linear_sem import ace, ace_grad
-from lib.ols import myOLS
 from lib.misc import cross_moment_4, printt
+from lib.ols import myOLS
+from lib.relaxed_notears import relaxed_notears, mest_covarance
 
 raw_fname = "raw.csv"
 summary_fname = "summary.txt"
@@ -93,8 +93,11 @@ def ace_notears(G, sim_args, m_obs, dag_tolerance, notears_options, linear_type)
     assert result_circ["success"]
     theta_n, w_n = result_circ["theta"], result_circ["w"]
     ace_n = (ace(theta_n, L_no_diag)).item()
-    normal = linear_type == "linear-gauss"
-    covariance_matrix = mest_covarance(w_n, data_cov, L_no_diag, normal)
+    if linear_type == "linear":
+        covariance_matrix = mest_covarance(w_n, data_cov, L_no_diag, True)
+    else:
+        cm4 = cross_moment_4(data)
+        covariance_matrix = mest_covarance(w_n, data_cov, L_no_diag, False, cm4)
     gradient_of_ace_with_respect_to_theta = ace_grad(theta=theta_n, L=L_no_diag)
     ace_var = (
         gradient_of_ace_with_respect_to_theta
@@ -193,7 +196,7 @@ def main():
     tstart = datetime.datetime.now()
     printt("Starting!")
     output_folder = Path(
-        "output", f"nonlinearity_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+        "output", f"nonlinear_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
     )
     os.makedirs(output_folder)
 

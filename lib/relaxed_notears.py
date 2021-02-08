@@ -226,25 +226,34 @@ def mest_covarance(
     W_hat,
     data_covariance,
     L_parametrization_matrix,
-    normal: bool = True,
-    verbose=False,
+    normal_data: bool = True,
+    cmoment4=None,
 ) -> np.ndarray:
     """Compute the Least-squares covariance matrix assuming:
     - Equality-constrained by a epsilon-relaxed h-function
     - the W matrix is parametrized by vec(W) = L*theta
+    - The noise (and consequently the data, v) is centered
     
     Args:
-      normal: use Isserlis theorem to compute 4th cross moment
+      normal_data: use Isserlis theorem to compute 4th cross moment, assuming data is
+        multivariate normal (true if data generator is Linear with normal Noise)
+      cmoment4: 4dimensional tensor of cross moments (4th cross moments) E[v⊗v⊗v⊗v]
 
     Returns:
         the covariance matrix for sqrt(n)*(theta_n - theta_circ)
     """
+
+    if not normal_data:
+        assert (
+            cmoment4 is not None
+        ), "Under non-normal noise, the 4th moment must be supplied"
 
     # aliases and simple variabels
     d = W_hat.shape[0]
     d2 = d ** 2
     id = np.eye(d)
     noise_cov = id
+    noise_prec = np.linalg.inv(noise_cov)
     data_cov = data_covariance
     W_I = W_hat - id
     L = L_parametrization_matrix
@@ -258,24 +267,27 @@ def mest_covarance(
     for i, j in itertools.product(range(d), repeat=2):
         P[d * i + j, d * j + i] = 1
 
-    K_expected_loss_hessian = (
-        L.T @ scipy.linalg.kron(np.linalg.inv(noise_cov), data_cov) @ L
-    )
+    K_expected_loss_hessian = L.T @ np.kron(np.linalg.inv(noise_cov), data_cov) @ L
 
-    if normal:
+    if normal_data:
         # simpler formula for J, valid when using Isserlis' theorem and data is normal
         Jtilde = (
-            scipy.linalg.kron(W_I.T @ data_cov @ W_I, data_cov)
-            + scipy.linalg.kron(W_I.T @ data_cov, data_cov @ W_I) @ P
+            np.kron(W_I.T @ data_cov @ W_I, data_cov)
+            + np.kron(W_I.T @ data_cov, data_cov @ W_I) @ P
         )
     else:
-        Jtilde = (
-            scipy.linalg.kron(W_I.T @ data_cov @ W_I, data_cov)
-            + scipy.linalg.kron(W_I.T @ data_cov, data_cov @ W_I) @ P
-        )
-        # raise NotImplementedError("4th cross moment estimation is a pain...")
-        warnings.warn("Incorrectly using normal assumption on data higher moments")
+        varvar = np.tensordot(data_cov, data_cov, 0)
+        Jtilde = np.einsum(
+            "iqok,jr,pl,qr,op->ijkl",
+            cmoment4 - varvar,
+            noise_prec,
+            noise_prec,
+            W_I,
+            W_I,
+        ).reshape(d2, d2)
+        # b[d*j+i, d*l+k] = a[i, j, k, l] is the same as b=a.reshape(d**2,d**2)
     J_score_covariance = L.T @ Jtilde @ L
+    assert np.allclose(J_score_covariance, J_score_covariance.T), "Not symmetric!"
 
     grad_h_theta = grad_h(W_hat).T.flatten() @ L  # assume vec(W) = L@theta
     plane_normal_vec = grad_h_theta / np.linalg.norm(grad_h_theta, ord=2)

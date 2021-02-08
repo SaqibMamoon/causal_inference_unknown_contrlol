@@ -96,7 +96,7 @@ def lingam_stuff(data, opts):
     return W, ace, lo, hi
 
 
-def notears_stuff(data: np.ndarray, opts: argparse.Namespace):
+def notears_stuff(data: np.ndarray, opts: argparse.Namespace, normal):
     data_cov = np.cov(data, rowvar=False)
     d = data.shape[1]
     L = make_L_no_diag(d)
@@ -106,8 +106,11 @@ def notears_stuff(data: np.ndarray, opts: argparse.Namespace):
     assert res["success"]
     w = res["w"]
     theta = res["theta"]
-
-    covariance_matrix = mest_covarance(w, data_cov, L)
+    if normal:
+        covariance_matrix = mest_covarance(w, data_cov, L, normal)
+    else:
+        cm4 = cross_moment_4(data)
+        covariance_matrix = mest_covarance(w, data_cov, L, normal, cm4)
     gradient_of_ace_with_respect_to_theta = ace_grad(theta=theta, L=L)
     ace_variance = (
         gradient_of_ace_with_respect_to_theta
@@ -159,6 +162,7 @@ def run_experiment(opts):
 
     ress = []
     for sem_type in ["linear-gauss", "linear-exp", "linear-gumbel"]:
+        normal = sem_type == "linear_gauss"
         W_our_lim, ace_our_lim = ace_circ(
             W_true, np.eye(opts.d_nodes), opts.dag_tolerance
         )
@@ -194,7 +198,7 @@ def run_experiment(opts):
                 ace_our_se,
                 ace_ci_our_low,
                 ace_ci_our_high,
-            ) = notears_stuff(data, opts)
+            ) = notears_stuff(data, opts, normal)
             ress.append(
                 dict(
                     data_draw=data_draw,
