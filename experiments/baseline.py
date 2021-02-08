@@ -1,6 +1,5 @@
 import argparse
 import datetime
-from lib.plotters import draw_graph
 import pathlib
 import os
 import itertools
@@ -17,10 +16,12 @@ import matplotlib.pyplot as plt
 import colorama
 import seaborn as sns
 
-from lib.relaxed_notears import relaxed_notears, mest_covarance, ace_circ
-from lib.linear_sem import ace, ace_grad
-from lib.linear_algebra import make_L_no_diag, make_Z_clear_first
 from lib.daggnn_util import simulate_random_dag, simulate_sem
+from lib.linear_algebra import make_L_no_diag, make_Z_clear_first
+from lib.linear_sem import ace, ace_grad
+from lib.misc import printt, cross_moment_4
+from lib.plotters import draw_graph
+from lib.relaxed_notears import relaxed_notears, mest_covarance, ace_circ
 
 colorama.init()
 
@@ -36,10 +37,6 @@ variances = {
     "linear-exp": 1,
     "linear-gumbel": np.pi ** 2 / 6,
 }
-
-
-def printt(*args):
-    print(datetime.datetime.now().isoformat(), *args)
 
 
 def main():

@@ -21,14 +21,11 @@ from lib.linear_algebra import make_L_no_diag
 from lib.relaxed_notears import relaxed_notears, mest_covarance
 from lib.linear_sem import ace, ace_grad
 from lib.ols import myOLS
+from lib.misc import cross_moment_4, printt
 
 raw_fname = "raw.csv"
 summary_fname = "summary.txt"
 config_fname = "config.txt"
-
-
-def printt(*args):
-    print(datetime.datetime.now().isoformat(), *args)
 
 
 def post_process(folder_path):
@@ -195,21 +192,22 @@ def parse_args():
 def main():
     tstart = datetime.datetime.now()
     printt("Starting!")
-    opts = parse_args()
     output_folder = Path(
         "output", f"nonlinearity_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
     )
     os.makedirs(output_folder)
 
     printt("Parsing options")
+    opts = parse_args()
     pp = pprint.PrettyPrinter(indent=4)
     with open(output_folder.joinpath(config_fname), "w") as f:
         f.write(pp.pformat(vars(opts)) + "\n")
+    printt(pp.pformat(vars(opts)))
 
     printt("Running experiment")
     run_experiment(opts, output_folder)
 
-    printt("Post processing")
+    printt("Processing experiment output")
     post_process(output_folder)
 
     printt("Done!")
