@@ -2,7 +2,7 @@
 """
 import os
 import itertools
-from pathlib import Path
+import pathlib
 import warnings
 import argparse
 import pprint
@@ -195,13 +195,13 @@ def parse_args():
 def main():
     tstart = datetime.datetime.now()
     printt("Starting!")
-    output_folder = Path(
-        "output", f"nonlinear_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
-    )
-    os.makedirs(output_folder)
 
     printt("Parsing options")
     opts = parse_args()
+    output_folder = pathlib.Path(
+        "output", f"nonlinear_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+    )
+    os.makedirs(output_folder)
     pp = pprint.PrettyPrinter(indent=4)
     with open(output_folder.joinpath(config_fname), "w") as f:
         f.write(pp.pformat(vars(opts)) + "\n")

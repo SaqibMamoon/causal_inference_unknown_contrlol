@@ -13,9 +13,9 @@ dependencies:
   - seaborn=0.11.0
   - networkx=2.5
   - statsmodels=0.12.1
-  - jinja2=2.11.3 # optional pandas dep for nice output
-  - tqdm=4.56 # nice progress bar
-  - colorama=0.4.4 # for nice nested progress bars onwindows
+  - jinja2=2.11.3
+  - tqdm=4.56
+  - colorama=0.4.4
   - pip:
     - lingam==1.5.1
     - --editable .

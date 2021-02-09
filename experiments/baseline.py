@@ -43,13 +43,13 @@ variances = {
 def main():
     tstart = datetime.datetime.now()
     printt("Starting!")
+
+    printt("Parsing options")
+    opts = parse_args()
     output_folder = pathlib.Path(
         "output", f"baselines_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
     )
     os.makedirs(output_folder)
-
-    printt("Parsing options")
-    opts = parse_args()
     pp = pprint.PrettyPrinter(indent=4)
     with open(output_folder.joinpath(config_fname), "w") as f:
         f.write(pp.pformat(vars(opts)) + "\n")
