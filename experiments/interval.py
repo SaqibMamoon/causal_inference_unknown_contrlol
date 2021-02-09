@@ -13,7 +13,7 @@ import scipy.stats
 
 from lib.relaxed_notears import relaxed_notears, mest_covarance, h
 from lib.linear_algebra import make_L_no_diag
-from lib.linear_sem import ace, ace_grad, make_random_w, generate_data_from_dag
+from lib.linear_sem import ace, ace_grad, generate_data_from_dag, selected_graphs
 import lib.ols
 from lib.plotters import draw_graph
 
@@ -215,29 +215,6 @@ def run_experiment(general_options, notears_options):
     print(f"END RUN === Run time: {str(t_end - t_start).split('.')[0]}")
 
 
-models = {
-    "2nodes forward": np.array([[0, 0.4], [0, 0]]),
-    "2nodes backwards": np.array([[0, 0], [0.4, 0]]),
-    "3nodes fork": np.array(
-        [[0, 0.4, 0], [0, 0, 0], [0.7, 0.2, 0]]
-    ),  # dense v model - fork!
-    "3nodes path": np.array(
-        [[0, 0.4, 0.7], [0, 0, 0], [0, 0.2, 0]]
-    ),  # dense v model - path!
-    "3nodes collider": np.array(
-        [[0, 0, 0.7], [0, 0, 0.2], [0, 0, 0]]
-    ),  # dense v model - path!
-    "3nodes path stronger": 10
-    * np.array([[0, 0.4, 0.7], [0, 0, 0], [0, 0.2, 0]]),  # dense v model - path!
-    "3nodes path possible": np.array([[0, 0.4, 0.7], [0, 0, 0], [0, 0, 0]]),
-    "3nodes path possible backwards": np.array([[0, 0, 0.7], [0.4, 0, 0], [0, 0, 0]]),
-    "4node collider": np.array(
-        [[0, 0, 1, 0], [0, 0, 1, 0], [0, 0, 0, 0], [1, 1, 0, 0]]
-    ),  # one fork, one collider
-    "4node random": make_random_w(4, density=0.5, min_val=0.4, max_val=1, seed=0),
-    "5node random": make_random_w(5, density=0.5, min_val=0.2, max_val=2.0, seed=0),
-}
-
 if __name__ == "__main__":
     print("Recording options")
     general_options = dict()
@@ -248,7 +225,7 @@ if __name__ == "__main__":
     notears_options = dict()
     notears_options["nitermax"] = 1000
     if True:
-        for name, w_true in models.items():
+        for name, w_true in selected_graphs.items():
             general_options["w_true"] = w_true
             general_options["batch_name"] = name
             run_experiment(general_options, notears_options)

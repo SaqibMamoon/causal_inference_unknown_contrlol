@@ -83,3 +83,29 @@ def make_random_w(d, density=0.5, min_val=0.1, max_val=1, seed=None):
     w = P.transpose() @ supertriangular_mat @ P
 
     return w
+
+
+selected_graphs = {
+    "2forward": np.array([[0, 0.4], [0, 0]]),
+    "2backwards": np.array([[0, 0], [0.4, 0]]),
+    "3fork": np.array([[0, 0.4, 0], [0, 0, 0], [0.7, 0.2, 0]]),  # dense v model - fork!
+    "3path": np.array([[0, 0.4, 0.7], [0, 0, 0], [0, 0.2, 0]]),  # dense v model - path!
+    "3collider": np.array(
+        [[0, 0, 0.7], [0, 0, 0.2], [0, 0, 0]]
+    ),  # dense v model - path!
+    "3path stronger": 10
+    * np.array([[0, 0.4, 0.7], [0, 0, 0], [0, 0.2, 0]]),  # dense v model - path!
+    "3path possible": np.array([[0, 0.4, 0.7], [0, 0, 0], [0, 0, 0]]),
+    "3path possible backwards": np.array([[0, 0, 0.7], [0.4, 0, 0], [0, 0, 0]]),
+    "4collider": np.array(
+        [[0, 0, 1, 0], [0, 0, 1, 0], [0, 0, 0, 0], [1, 1, 0, 0]]
+    ),  # one fork, one collider
+    "calibration": np.array(
+        [
+            [0.0, -1.0, 1.6, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 1.2, 0.0, -0.5],
+            [0.0, 0.0, 0.0, 0.0],
+        ]
+    ),  # for the experiment on calibration
+}
