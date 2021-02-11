@@ -262,14 +262,14 @@ def mest_covarance(
     # Make the computations
     #
 
-    # The permutation matrix that works like P@vecop(A) = vecop(A.T)
-    P = np.zeros((d2, d2))
-    for i, j in itertools.product(range(d), repeat=2):
-        P[d * i + j, d * j + i] = 1
-
     K_expected_loss_hessian = L.T @ np.kron(np.linalg.inv(noise_cov), data_cov) @ L
 
     if normal_data:
+        # The permutation matrix that works like P@vecop(A) = vecop(A.T)
+        P = np.zeros((d2, d2))
+        for i, j in itertools.product(range(d), repeat=2):
+            P[d * i + j, d * j + i] = 1
+
         # simpler formula for J, valid when using Isserlis' theorem and data is normal
         Jtilde = (
             np.kron(W_I.T @ data_cov @ W_I, data_cov)
