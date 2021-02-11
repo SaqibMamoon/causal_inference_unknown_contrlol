@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 from lib.linear_algebra import make_L_no_diag
-from lib.linear_sem import ace, generate_data_from_dag, ace_grad
+from lib.linear_sem import ace, generate_data_from_dag, ace_grad, selected_graphs
 from lib.relaxed_notears import relaxed_notears, mest_covarance, h
 
 
@@ -228,16 +228,7 @@ if __name__ == "__main__":
     general_options["m_obss"] = [10 ** 2, 10 ** 4]
     general_options["m_obs_for_gamma0_computation"] = 10 ** 7
     general_options["dag_tolerance_epsilon"] = 1e-7
-    # general_options['w_true'] = make_random_w(d, density=.5, min_val=.4,
-    # max_val=2, seed=7)
-    general_options["w_true"] = np.array(
-        [
-            [0.0, -1.0, 1.6, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 1.2, 0.0, -0.5],
-            [0.0, 0.0, 0.0, 0.0],
-        ]
-    )
+    general_options["w_true"] = selected_graphs["calibration"]
     general_options["repititions"] = 1000
 
     notears_options = dict()
