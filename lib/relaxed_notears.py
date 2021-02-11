@@ -70,12 +70,7 @@ def make_notears_loss(sigma_hat: np.ndarray, L: np.ndarray):
 
 
 def relaxed_notears(
-    data_cov: np.ndarray,
-    L,
-    W_initial,
-    dag_tolerance: float,
-    optim_opts=None,
-    verbose=False,
+    data_cov: np.ndarray, L, W_initial, dag_tolerance: float, optim_opts=None,
 ) -> dict:
     """Get Notears solution with a guarantee of zero on diagonal, to accepted tolerance
     """
@@ -98,6 +93,11 @@ def relaxed_notears(
         "minimum_progress_rate", 0.25
     )  # the accepted least decrease in infeasibility
     tolerated_constraint_violation = opts.pop("tolerated_constraint_violation", 1e-12)
+    verbose = opts.pop("verbose", False)
+    ftol = opts.pop(
+        "lbfgs_ftol", 2.220446049250313e-09
+    )  # defaults from scipy documentation
+    gtol = opts.pop("lbfgs_gtol", 1e-5)  # defaults from scipy documentation
     if len(opts.keys()) != 0:
         warnings.warn(f"Unknown options keys: {opts.keys()}")
 
@@ -132,9 +132,9 @@ def relaxed_notears(
             method="L-BFGS-B",
             options={
                 "disp": None,  # None means that the iprint argument is used
-                # 'ftol':1e-16, # default is 2.220446049250313e-09
-                # 'gtol':1e-6, # default is 1e-5
                 # 'iprint':0 # 0 = one output, at last iteration
+                "ftol": ftol,
+                "gtol": gtol,
             },
         )
         return res["x"], res["message"]
@@ -304,8 +304,11 @@ def mest_covarance(
     return estimator_covariance_mat
 
 
-def ace_circ(W, noise_cov, dag_tolerance):
+def ace_circ(W, noise_cov, dag_tolerance, optim_opts=None):
     """Solve the relaxed NOTEARS problem in the infinite-data limit
+
+    assumes a linear SEM with possibly non-gaussian noise.
+    assumes centered data (mean=0)
     
     returns W_circ and ace_circ"""
     d = W.shape[0]
@@ -314,7 +317,11 @@ def ace_circ(W, noise_cov, dag_tolerance):
     data_cov = M @ noise_cov @ M.T  # if noise has covariance matrix id
     L = make_L_no_diag(d)
     res = relaxed_notears(
-        data_cov, L=L, W_initial=np.zeros((d, d)), dag_tolerance=dag_tolerance,
+        data_cov,
+        L=L,
+        W_initial=np.zeros((d, d)),
+        dag_tolerance=dag_tolerance,
+        optim_opts=optim_opts,
     )
     assert res["success"]
     W_circ = res["w"]
