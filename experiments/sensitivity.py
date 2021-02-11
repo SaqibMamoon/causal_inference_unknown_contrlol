@@ -3,6 +3,9 @@
 import datetime
 import os
 import warnings
+import pathlib
+import pprint
+import argparse
 
 import pandas as pd
 import numpy as np
@@ -10,35 +13,47 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.colors
 import scipy.linalg
+import networkx as nx
 
-import lib.relaxed_notears
+from lib.daggnn_util import simulate_random_dag
+from lib.relaxed_notears import relaxed_notears, make_h_paramterized, make_notears_loss
 from lib.linear_algebra import make_L_no_diag
-from lib.linear_sem import ace, make_random_w
-
+from lib.linear_sem import ace
+from lib.misc import RandGraphSpec, printt
 from lib.plotters import draw_graph, plot_contours_in_2d
 
+opath = pathlib.Path("output")
+fname_c = "config.txt"
+fname_raw = "results.csv"
+fname_pgf = "dagtol_pgfplots.csv"
 
-def run_experiment(general_options, notears_options):
+
+def run_experiment(opts, output_folder):
     #
     #
     # Initialize
     #
     #
-    output_folder = (
-        f"output/sensitivity_eps_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
-        + f" {general_options['run_name']}"
+    notears_options = dict()
+    notears_options["tolerated_constraint_violation"] = 1e-12
+    dag_tolerance_epsilons = np.logspace(
+        np.log10(opts.eps_min), np.log10(opts.eps_max), opts.n_eps
     )
-    os.mkdir(output_folder)
-
-    t_start = datetime.datetime.now()
-    print(f"RUN START")
-
-    print(f"Outputting to folder {output_folder}")
-    print(f"General options {general_options}")
-    print(f"Notears options {notears_options}")
+    w_trues = []
+    for s in range(0, opts.n_graphs):
+        np.random.seed(s)
+        w_trues.append(
+            nx.to_numpy_array(
+                simulate_random_dag(
+                    d=opts.rand_graph.d,
+                    degree=opts.rand_graph.k * 2,
+                    graph_type="erdos-renyi",
+                )
+            )
+        )
 
     result_dfs = []
-    for k, w_true in enumerate(general_options["w_trues"]):
+    for k, w_true in enumerate(w_trues):
         #
         #
         # Set up
@@ -47,51 +62,42 @@ def run_experiment(general_options, notears_options):
         print("Entering Set Up")
         d_nodes = w_true.shape[0]
         L_no_diag = make_L_no_diag(d_nodes)
-        a = -0.001
         w_initial = np.zeros((d_nodes, d_nodes))
+        h, grad_h = make_h_paramterized(L_no_diag)
 
         print(f"Handling data generator k={k}")
         print(f"w_true = {w_true}")
 
-        # m_obs = general_options['m_obs']
-        # data = lib.relaxed_notears.generate_data_from_dag(m_obs=m_obs, W=w_true,
-        #                                          seed=general_options['data_seed'])
         id = np.eye(d_nodes)
         M = np.linalg.pinv(id - w_true.T)
         data_cov = M @ M.T
         noise_cov = np.eye(data_cov.shape[0])
         noise_prec = np.linalg.pinv(noise_cov)
-        Q = scipy.linalg.kron(noise_prec, data_cov)
+        Q = np.kron(noise_prec, data_cov)
         sQrt = scipy.linalg.sqrtm(Q)
-        theta_unconstrained = np.linalg.pinv(sQrt @ L_no_diag) @ sQrt @ id.T.flatten()
-        w_unconstrained = (L_no_diag @ theta_unconstrained).reshape(d_nodes, d_nodes).T
-        h_unconstrained = lib.relaxed_notears.h(w_unconstrained)
-        print(f"theta_unconstrained={theta_unconstrained}")
-        print(f"w_unconstrained={w_unconstrained}")
-        print(f"h_unconstrained={h_unconstrained}")
+        theta_star = np.linalg.pinv(sQrt @ L_no_diag) @ sQrt @ id.T.flatten()
+        w_star = (L_no_diag @ theta_star).reshape(d_nodes, d_nodes).T
+        h_star = h(theta_star)
+        print(f"theta_star={theta_star}")
+        print(f"w_star={w_star}")
+        print(f"h_star={h_star}")
 
         result_dicts = []
-        for dag_tolerance in general_options["dag_tolerance_epsilons"]:
-            print(
-                f"Starting handling of {general_options['run_name']},"
-                f" eps={dag_tolerance}."
-            )
+        for dag_tolerance in dag_tolerance_epsilons:
+            print(f"Starting handling of eps={dag_tolerance}.")
             print("Computing Notears solution")
-            if dag_tolerance >= h_unconstrained:
+            if dag_tolerance >= h_star:
                 warnings.warn(
                     f"The current dag tolerance will allow optimum in the interior."
-                    f" {dag_tolerance} >= {h_unconstrained}"
+                    f" {dag_tolerance} >= {h_star}"
                 )
 
-            result = lib.relaxed_notears.relaxed_notears(
+            result = relaxed_notears(
                 data_cov, L_no_diag, w_initial, dag_tolerance, notears_options
             )
             theta_notears = result["theta"]
             w_notears = result["w"]
             theta_true = L_no_diag.T @ w_true.T.flatten()
-            h, grad_h = lib.relaxed_notears.make_h_paramterized(
-                L_no_diag, np.zeros(w_initial.shape)
-            )
             h_notears = h(theta_notears)
             assert result["success"], "Solving failed!"
             assert (
@@ -109,9 +115,9 @@ def run_experiment(general_options, notears_options):
                 k=k,
                 w_true=w_true,
                 theta_true=theta_true,
-                h_unconstrained=h_unconstrained,
-                w_unconstrained=w_unconstrained,
-                theta_unconstrained=theta_unconstrained,
+                h_star=h_star,
+                w_star=w_star,
+                theta_star=theta_star,
                 d_nodes=d_nodes,
                 data_cov=data_cov,
                 ace_notears=ace(theta_notears, L_no_diag),
@@ -147,50 +153,52 @@ def run_experiment(general_options, notears_options):
         df_inner["1-metric"] = df_inner["w_notears"].apply(
             lambda w: np.abs((w - w_true)).sum()
         )
-        df_inner["max-metric_unconstrained"] = np.abs((w_unconstrained - w_true)).max()
-        df_inner["2-metric_unconstrained"] = np.linalg.norm(
-            w_unconstrained - w_true, ord="fro"
-        )
-        df_inner["1-metric_unconstrained"] = np.abs((w_unconstrained - w_true)).sum()
+        df_inner["max-metric_star"] = np.abs((w_star - w_true)).max()
+        df_inner["2-metric_star"] = np.linalg.norm(w_star - w_true, ord="fro")
+        df_inner["1-metric_star"] = np.abs((w_star - w_true)).sum()
         result_dfs.append(df_inner)
 
         draw_graph(
             w=w_true,
             title="$W_{true}$",
-            out_path=os.path.join(output_folder, f"{k}_w_true.png"),
+            out_path=output_folder.joinpath(f"{k}_w_true.png"),
         )
         plt.close(plt.gcf())
         draw_graph(
             w=w_best,
             title=f"$\\hat W$ for $\\epsilon={df_inner['dag_tolerance'].min()}$",
-            out_path=os.path.join(output_folder, f"{k}_w_best.png"),
+            out_path=output_folder.joinpath(f"{k}_w_best.png"),
         )
         plt.close(plt.gcf())
         fig, axs = plt.subplots(1, 2)
         ax1, ax2 = axs.flatten()
         absmax = np.abs(w_best).max()
-        opts = dict(
+        plotopts = dict(
             cmap="PiYG",
             norm=matplotlib.colors.TwoSlopeNorm(vcenter=0, vmin=-absmax, vmax=absmax),
         )
-        ax1.matshow(w_best, **opts)
+        ax1.matshow(w_best, **plotopts)
         ax1.set_title("w_notears")
-        ax2.matshow(w_true, **opts)
+        ax2.matshow(w_true, **plotopts)
         ax2.set_title("w_true")
-        fig.savefig(os.path.join(output_folder, f"{k}_w_best_mat.png"))
+        fig.savefig(output_folder.joinpath(f"{k}_w_best_mat.png"))
         plt.close(fig)
 
         print(f"w_true_k: {w_true}")
         print(f"w_best_k: {w_best}")
 
-    df: pd.DataFrame = pd.concat(result_dfs)
-    df.to_pickle(path=os.path.join(output_folder, "results.csv"))
+    raw_path = output_folder.joinpath(fname_raw)
+    df = pd.concat(result_dfs)
+    df.to_pickle(path=raw_path)
+
+
+def post_process(output_folder):
+    raw_path = output_folder.joinpath(fname_raw)
     df = pd.read_pickle(
-        os.path.join(output_folder, "results.csv")
+        raw_path
     )  # make sure that code below works with the file saved.
-    df.pivot(index="dag_tolerance", columns="k", values="1-metric").to_csv(
-        os.path.join(output_folder, "dagtol_pgfplots.csv")
-    )
+    pgf_path = output_folder.joinpath(fname_pgf)
+    df.pivot(index="dag_tolerance", columns="k", values="1-metric").to_csv(pgf_path)
 
     fig = plt.figure("00")
     ax = fig.subplots()
@@ -205,17 +213,17 @@ def run_experiment(general_options, notears_options):
             label=f"$w(\\varepsilon)$, k={k}",
         )
         ax.loglog(
-            a.h_unconstrained.unique(),
-            a["1-metric_unconstrained"].unique(),
+            a.h_star.unique(),
+            a["1-metric_star"].unique(),
             linestyle="none",
             label=f"$w(\\infty)$, k={k}",
             color=f"C{k}",
             marker="*",
         )
-        ax.axvline(a.h_unconstrained.unique(), linestyle="dotted", color=f"C{k}")
+        ax.axvline(a.h_star.unique(), linestyle="dotted", color=f"C{k}")
     ax.legend()
     fig.show()
-    fig.savefig(os.path.join(output_folder, f"1-metric_thresh.png"))
+    fig.savefig(output_folder.joinpath(f"1-metric_thresh.png"))
     plt.close()
 
     for m in ["max-metric", "2-metric", "1-metric"]:
@@ -226,7 +234,7 @@ def run_experiment(general_options, notears_options):
         ax.set_yscale("log")
         fig.show()
         ax.legend_.remove()
-        fig.savefig(os.path.join(output_folder, f"{m}.png"))
+        fig.savefig(output_folder.joinpath(f"{m}.png"))
         plt.close(fig)
 
     fig = plt.figure("ace")
@@ -234,7 +242,7 @@ def run_experiment(general_options, notears_options):
     sns.lineplot(data=df, y="ace_err", x="dag_tolerance", hue="k", ax=ax)
     ax.set_xscale("log")
     fig.show()
-    fig.savefig(os.path.join(output_folder, f"ace_by_eps.png"))
+    fig.savefig(output_folder.joinpath(f"ace_by_eps.png"))
     plt.close()
 
     fig = plt.figure("actual_h")
@@ -243,7 +251,7 @@ def run_experiment(general_options, notears_options):
     ax.set_xscale("log")
     ax.set_yscale("log")
     fig.show()
-    fig.savefig(os.path.join(output_folder, f"actual_h.png"))
+    fig.savefig(output_folder.joinpath(f"actual_h.png"))
     plt.close()
 
     fig = plt.figure("ace")
@@ -258,12 +266,12 @@ def run_experiment(general_options, notears_options):
             color=f"C{k}",
             label=f"$|\\gamma(\\hat w(\\varepsilon))|$, k={k}",
         )
-        ax.axvline(a.h_unconstrained.unique(), linestyle="dotted", color=f"C{k}")
+        ax.axvline(a.h_star.unique(), linestyle="dotted", color=f"C{k}")
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.legend()
     fig.show()
-    fig.savefig(os.path.join(output_folder, f"ace_thresh.png"))
+    fig.savefig(output_folder.joinpath(f"ace_thresh.png"))
     plt.close()
 
     idxs = [8, 11]
@@ -278,12 +286,8 @@ def run_experiment(general_options, notears_options):
         corner0 = maximum * 1.2 + 0.1
         corner1 = minimum * 1.2 - 0.1
         bbox = (corner1, corner0, corner1, corner0)
-        h, _ = lib.relaxed_notears.make_h_paramterized(
-            make_L_no_diag(d_nodes), np.zeros((d_nodes, d_nodes))
-        )
-        loss, _ = lib.relaxed_notears.make_notears_loss(
-            data_cov, make_L_no_diag(d_nodes), np.zeros((d_nodes, d_nodes))
-        )
+        h, _ = make_h_paramterized(make_L_no_diag(d_nodes))
+        loss, _ = make_notears_loss(data_cov, make_L_no_diag(d_nodes))
 
         name_snap_pairs = [
             (f"eps{p}percent", int((thetas.shape[0] - 1) * p / 100))
@@ -351,37 +355,76 @@ def run_experiment(general_options, notears_options):
             ax.axhline(0, linestyle="solid", color="black")
             fig.colorbar(s, label=r"$\epsilon$")
             ax.set_aspect("equal")
-            fig.savefig(os.path.join(output_folder, f"{k}_coords_{name}.png"))
+            fig.savefig(output_folder.joinpath(f"{k}_coords_{name}.png"))
             plt.close(fig)
 
     print(f"Finished outputting")
 
-    #
-    #
-    #   Wrap up
-    #
-    #
-    t_end = datetime.datetime.now()
-    print(f"END RUN === Run time: {str(t_end - t_start).split('.')[0]}")
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument(
+        "--rand_graph",
+        type=RandGraphSpec,
+        help=(
+            "Specification of a random graphs. "
+            "<Number of nodes>,<expected number of edges per node>"
+        ),
+        default=RandGraphSpec("4,1"),
+    )
+    p.add_argument(
+        "--eps_min",
+        default=1e-11,
+        type=float,
+        help="The smallest dag tolerance under consideration",
+    )
+    p.add_argument(
+        "--eps_max",
+        default=1,
+        type=float,
+        help="The largest DAG tolerance under consideration",
+    )
+    p.add_argument(
+        "--n_eps",
+        default=20,
+        type=int,
+        help="The number of DAG tolerances to compute for",
+    )
+    p.add_argument(
+        "--n_graphs",
+        default=10,
+        type=int,
+        help="How many random graphs to compute for?",
+    )
+    opts = p.parse_args()
+    return opts
+
+
+def main():
+    tstart = datetime.datetime.now()
+    printt("Starting!")
+
+    printt("Parsing options")
+    opts = parse_args()
+    output_folder = opath.joinpath(
+        f"sensitivity_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+    )
+    os.makedirs(output_folder)
+    pp = pprint.PrettyPrinter(indent=4)
+    with open(output_folder.joinpath(fname_c), "w") as f:
+        f.write(pp.pformat(vars(opts)) + "\n")
+    printt("Config:\n" + pp.pformat(vars(opts)))
+
+    printt("Running experiment")
+    run_experiment(opts, output_folder)
+
+    printt("Processing experiment output")
+    post_process(output_folder)
+
+    printt("Done!")
+    tend = datetime.datetime.now()
+    printt(f"Total runtime was {tend-tstart}")
 
 
 if __name__ == "__main__":
-    print("Recording options")
-    d = 4
-    general_options = dict()
-    general_options["dag_tolerance_epsilons"] = np.logspace(-11, -0, 20)
-    general_options["w_trues"] = [
-        make_random_w(d, density=0.5, min_val=0.1, max_val=2, seed=s)
-        for s in range(0, 10)
-    ]
-    # general_options['w_trues'] = [make_random_w(d, density=.5, min_val=1.0,
-    # max_val=10.0, seed=s) for s in range(0, 10)]
-    general_options["run_name"] = f"random{d}"
-
-    notears_options = dict()
-    notears_options["nitermax"] = 1000
-    notears_options["log_every"] = 10
-    # notears_options['penalty_start'] = 100000
-    # notears_options['slack_start'] = 1.0
-    notears_options["tolerated_constraint_violation"] = 1e-12  # default is 1e-12
-    run_experiment(general_options, notears_options)
+    main()

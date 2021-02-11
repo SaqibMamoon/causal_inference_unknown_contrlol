@@ -62,29 +62,6 @@ def ace_grad(theta, L):
     return myMat[d, :]
 
 
-def make_random_w(d, density=0.5, min_val=0.1, max_val=1, seed=None):
-    """Construct a autoregression matrix for a linear SEM that is random.
-
-    Parameters
-        d the number of variables in the SEM
-        density is the chance that a certain edge is NOT set to zero
-    """
-    if seed is not None:
-        np.random.seed(seed)
-    random_mat = (
-        np.random.uniform(low=min_val, high=max_val, size=(d, d))
-        * np.random.choice([-1, 1], size=(d, d))
-        * np.random.choice([1, 0], size=(d, d), p=[density, 1 - density])
-    )
-    supertriangular_mat = np.triu(random_mat, k=1).round(1)
-
-    idx = np.random.permutation(d)
-    P = np.eye(d)[idx, :]  # permute the rows
-    w = P.transpose() @ supertriangular_mat @ P
-
-    return w
-
-
 selected_graphs = {
     "2forward": np.array([[0, 0.4], [0, 0]]),
     "2backwards": np.array([[0, 0], [0.4, 0]]),
