@@ -101,7 +101,11 @@ def notears_stuff(data: np.ndarray, opts: argparse.Namespace, normal):
     n, d = data.shape
     L = make_L_no_diag(d)
     res = relaxed_notears(
-        data_cov, L=L, W_initial=np.zeros((d, d)), dag_tolerance=opts.dag_tolerance,
+        data_cov,
+        L=L,
+        W_initial=np.zeros((d, d)),
+        dag_tolerance=opts.dag_tolerance,
+        optim_opts=dict(lbfgs_ftol=opts.ftol, lbfgs_gtol=opts.gtol),
     )
     assert res["success"]
     w = res["w"]
@@ -291,7 +295,7 @@ def parse_args():
     )
     p.add_argument(
         "--n_data",
-        default=[100],
+        default=[1000],
         type=int,
         nargs="+",
         help=(
@@ -347,6 +351,18 @@ def parse_args():
         choices=["gauss", "exp", "gumbel"],
         help="How many expected edges per node?",
         action=CheckUniqueStore,
+    )
+    p.add_argument(
+        "--ftol",
+        default=1e-10,
+        type=float,
+        help="The ftol parameter to pass to L-BFGS-B",
+    )
+    p.add_argument(
+        "--gtol",
+        default=1e-6,
+        type=float,
+        help="The ftol parameter to pass to L-BFGS-B",
     )
     opts = p.parse_args()
     return opts

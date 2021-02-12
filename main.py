@@ -34,15 +34,17 @@ def baseline():
         "--dag_tolerance",
         "1e-7",
         "--confidence_level",
-        ".1",
+        ".05",
         "--n_data",
-        "100",
-        "--d_nodes",
-        "10",
-        "--k_edge_multiplier",
-        "1",
+        "10_000",
         "--n_data_lingam_lim",
         "1000000",
+        "--rand_graph",
+        "10,1",
+        "--n_repetitions",
+        "100",
+        "--n_bootstrap",
+        "100",
     ]
     subprocess.run(["exp-baseline"] + opts)
 
