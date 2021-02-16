@@ -12,8 +12,7 @@ def clean():
     print(f"Deleted all content in folder {ofolder.relative_to('.')}")
 
 
-def all_nonlinear():
-    """Build the command line arguments for the nonlinearity experiments and run them"""
+def nonlinear():
     common = [
         "exp-nonlinear",
         "--repetitions",
@@ -49,8 +48,34 @@ def baseline():
     subprocess.run(["exp-baseline"] + opts)
 
 
+def sensitivity():
+    opts = [
+        "--rand_graph",
+        "4,1",
+        "--eps_min",
+        "1e-12",
+        "--eps_max",
+        "1e2",
+        "--n_eps",
+        "30",
+        "--n_graphs",
+        "10",
+        "--ftol",
+        "1e-11",
+        "--gtol",
+        "1e-7",
+    ]
+    subprocess.run(["exp-sensitivity"] + opts)
+
+
+def calibration():
+    subprocess.run(["exp-calibration"])
+
+
 def main():
-    cmds = {"clean": clean, "nonlinear": all_nonlinear, "baseline": baseline}
+    cmds = {
+        q.__name__: q for q in [clean, nonlinear, baseline, sensitivity, calibration]
+    }
 
     p = argparse.ArgumentParser()
     p.add_argument("cmd", type=str, choices=cmds.keys())

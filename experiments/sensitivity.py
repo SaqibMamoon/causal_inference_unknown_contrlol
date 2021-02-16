@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 import matplotlib.colors
 import scipy.linalg
 import networkx as nx
+from tqdm import tqdm
+import colorama
 
 from lib.daggnn_util import simulate_random_dag
 from lib.relaxed_notears import relaxed_notears, make_h_paramterized, make_notears_loss
@@ -22,9 +24,11 @@ from lib.linear_sem import ace
 from lib.misc import RandGraphSpec, printt
 from lib.plotters import draw_graph, plot_contours_in_2d
 
+colorama.init()
+
 opath = pathlib.Path("output")
 fname_c = "config.txt"
-fname_raw = "results.csv"
+fname_raw = "results.pkl"
 fname_pgf = "dagtol_pgfplots.csv"
 
 
@@ -55,20 +59,18 @@ def run_experiment(opts, output_folder):
         )
 
     result_dfs = []
-    for k, w_true in enumerate(w_trues):
+    for k, w_true in tqdm(list(enumerate(w_trues)), desc="graph W"):
         #
         #
         # Set up
         #
         #
-        print("Entering Set Up")
         d_nodes = w_true.shape[0]
         L_no_diag = make_L_no_diag(d_nodes)
         w_initial = np.zeros((d_nodes, d_nodes))
         h, grad_h = make_h_paramterized(L_no_diag)
 
-        print(f"Handling data generator k={k}")
-        print(f"w_true = {w_true}")
+        tqdm.write(f"w_true = {w_true}")
 
         id = np.eye(d_nodes)
         M = np.linalg.pinv(id - w_true.T)
@@ -80,18 +82,15 @@ def run_experiment(opts, output_folder):
         theta_star = np.linalg.pinv(sQrt @ L_no_diag) @ sQrt @ id.T.flatten()
         w_star = (L_no_diag @ theta_star).reshape(d_nodes, d_nodes).T
         h_star = h(theta_star)
-        print(f"theta_star={theta_star}")
-        print(f"w_star={w_star}")
-        print(f"h_star={h_star}")
 
         result_dicts = []
-        for dag_tolerance in dag_tolerance_epsilons:
-            print(f"Starting handling of eps={dag_tolerance}.")
-            print("Computing Notears solution")
+        for dag_tolerance in tqdm(
+            dag_tolerance_epsilons, desc="tolerance epsilon", leave=False
+        ):
             if dag_tolerance >= h_star:
                 warnings.warn(
                     f"The current dag tolerance will allow optimum in the interior."
-                    f" {dag_tolerance} >= {h_star}"
+                    f" {dag_tolerance:.2g} >= {h_star:.2g}"
                 )
 
             result = relaxed_notears(
@@ -131,15 +130,8 @@ def run_experiment(opts, output_folder):
                 rho=result["rho"],
             )
             result_dicts.append(d)
-            print(f"message: {result['message']}")
-            print(f"w_notears = {w_notears}")
-            print(f"h(w_notears) = {h_notears:.2e}")
-            # print(f"grad_h(w_notears) = {grad_h(theta_notears)}")
-            print(f"|grad_h(w_notears)| = {np.linalg.norm(grad_h(theta_notears)):.2e}")
-            print(f"augmentation rho={result['rho']:.2e}")
-            print(f"lagr mult={result['alpha']:.2e}")
 
-        #   Post process after completion of all runs (produce plots and save)
+        #   Process after completion of all runs (produce plots and save)
         #
         #
         df_inner = pd.DataFrame(result_dicts)
@@ -165,13 +157,11 @@ def run_experiment(opts, output_folder):
             title="$W_{true}$",
             out_path=output_folder.joinpath(f"{k}_w_true.png"),
         )
-        plt.close(plt.gcf())
         draw_graph(
             w=w_best,
             title=f"$\\hat W$ for $\\epsilon={df_inner['dag_tolerance'].min()}$",
             out_path=output_folder.joinpath(f"{k}_w_best.png"),
         )
-        plt.close(plt.gcf())
         fig, axs = plt.subplots(1, 2)
         ax1, ax2 = axs.flatten()
         absmax = np.abs(w_best).max()
@@ -186,8 +176,8 @@ def run_experiment(opts, output_folder):
         fig.savefig(output_folder.joinpath(f"{k}_w_best_mat.png"))
         plt.close(fig)
 
-        print(f"w_true_k: {w_true}")
-        print(f"w_best_k: {w_best}")
+        printt(f"w_true_k: {w_true}")
+        printt(f"w_best_k: {w_best}")
 
     raw_path = output_folder.joinpath(fname_raw)
     df = pd.concat(result_dfs)
@@ -196,11 +186,8 @@ def run_experiment(opts, output_folder):
 
 def post_process(output_folder):
     raw_path = output_folder.joinpath(fname_raw)
-    df = pd.read_pickle(
-        raw_path
-    )  # make sure that code below works with the file saved.
-    pgf_path = output_folder.joinpath(fname_pgf)
-    df.pivot(index="dag_tolerance", columns="k", values="1-metric").to_csv(pgf_path)
+    df = pd.read_pickle(raw_path)
+    generate_pgfplots_output(df, output_folder)
 
     fig = plt.figure("00")
     ax = fig.subplots()
@@ -241,7 +228,7 @@ def post_process(output_folder):
 
     fig = plt.figure("ace")
     ax = fig.subplots()
-    sns.lineplot(data=df, y="ace_err", x="dag_tolerance", hue="k", ax=ax)
+    sns.lineplot(data=df, y="ace_notears", x="dag_tolerance", hue="k", ax=ax)
     ax.set_xscale("log")
     fig.show()
     fig.savefig(output_folder.joinpath(f"ace_by_eps.png"))
@@ -256,27 +243,36 @@ def post_process(output_folder):
     fig.savefig(output_folder.joinpath(f"actual_h.png"))
     plt.close()
 
-    fig = plt.figure("ace")
+    fig = plt.figure("aceerr")
     ax = fig.subplots()
     for k in df.k.unique():
         a = df[df.k == k]
         ax.plot(
             a.dag_tolerance,
             np.abs(a["ace_abs_err"]),
-            linestyle="dotted",
+            linestyle="solid",
             marker=".",
             color=f"C{k}",
-            label=f"$|\\gamma(\\hat w(\\varepsilon))|$, k={k}",
+            label=f"$|\\gamma_{{true}} - \\gamma(\\hat w(\\varepsilon))|$, k={k}",
         )
         ax.axvline(a.h_star.unique(), linestyle="dotted", color=f"C{k}")
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.legend()
     fig.show()
-    fig.savefig(output_folder.joinpath(f"ace_thresh.png"))
+    fig.savefig(output_folder.joinpath(f"ace_abs_err.png"))
     plt.close()
 
-    idxs = [8, 11]
+    plot_cross_sections([8, 11], df, output_folder)
+
+    print(f"Finished outputting")
+
+
+def generate_pgfplots_output(df, output_folder):
+    pgf_path = output_folder.joinpath(fname_pgf)
+    df.pivot(index="dag_tolerance", columns="k", values="ace_abs_err").to_csv(pgf_path)
+
+
+def plot_cross_sections(idxs, df, output_folder):
     for k in df.k.unique():
         a = df[df.k == k]
         thetas = np.array(a.theta_notears.to_list())
@@ -359,8 +355,6 @@ def post_process(output_folder):
             ax.set_aspect("equal")
             fig.savefig(output_folder.joinpath(f"{k}_coords_{name}.png"))
             plt.close(fig)
-
-    print(f"Finished outputting")
 
 
 def parse_args():

@@ -7,6 +7,7 @@ import datetime
 import os
 import itertools
 from pathlib import Path
+import pprint
 
 import numpy as np
 import scipy.stats
@@ -14,10 +15,19 @@ import scipy.linalg
 import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import networkx as nx
 
+from lib.daggnn_util import simulate_sem
 from lib.linear_algebra import make_L_no_diag
-from lib.linear_sem import ace, generate_data_from_dag, ace_grad, selected_graphs
-from lib.relaxed_notears import relaxed_notears, mest_covarance, h
+from lib.linear_sem import ace, ace_grad, selected_graphs
+from lib.relaxed_notears import (
+    relaxed_notears,
+    mest_covarance,
+    h,
+    ace_circ as get_ace_circ,
+)
+
+fname_c = "config.txt"
 
 
 def epsilon_star(w_true, L):
@@ -48,15 +58,20 @@ def check_epsilon(w_true, L_parametrization, general_options):
         )
 
 
-def run_experiment(general_options, notears_options):
+def generate_data(G, n):
+    return simulate_sem(
+        G=G,
+        n=n,
+        x_dims=1,
+        sem_type="linear-gauss",
+        linear_type="linear",
+        noise_scale=1,
+    ).squeeze()
+
+
+def run_experiment(general_options, notears_options, output_folder):
     # Initialize
     #
-    seed = 123456
-    output_folder = Path(
-        "output", f"calibration_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
-    )
-    os.makedirs(output_folder)
-    t_start = datetime.datetime.now()
     d_nodes = general_options["w_true"].shape[0]
     L_parametrization = make_L_no_diag(d_nodes)
     w_initial = np.zeros((d_nodes, d_nodes))
@@ -68,28 +83,15 @@ def run_experiment(general_options, notears_options):
     print(
         "### START ###################################################################"
     )
-
+    G = nx.DiGraph(general_options["w_true"])
     theta_true = L_parametrization.T @ general_options["w_true"].T.flatten()
     ace_true = ace(theta_true, L_parametrization)
     print(f"True ACE is {ace_true}")
 
-    data = generate_data_from_dag(
-        m_obs=general_options["m_obs_for_gamma0_computation"],
-        W=general_options["w_true"],
-        seed=seed,
+    noise_cov = np.eye(w_true.shape[0])
+    w_circ, ace_circ = get_ace_circ(
+        w_true, noise_cov, general_options["dag_tolerance_epsilon"], notears_options
     )
-    data_cov = np.cov(data, rowvar=False)
-    result = relaxed_notears(
-        data_cov,
-        L_parametrization,
-        w_initial,
-        general_options["dag_tolerance_epsilon"],
-        notears_options,
-    )
-    theta_circ, w_circ, success = result["theta"], result["w"], result["success"]
-    if not success:
-        raise ValueError
-    ace_circ = ace(theta_circ, L_parametrization)
     print(f"The approximation of 'true' ACE is ACE_circ, which is {ace_circ}")
     print(
         f"The L1 error between 'w_true' and 'w_circ' is {np.abs(w_circ-w_true).sum()}"
@@ -98,15 +100,12 @@ def run_experiment(general_options, notears_options):
     result_dicts = []
     for n_data, rep in tqdm(
         itertools.product(
-            general_options["m_obss"], range(general_options["repititions"])
+            general_options["m_obss"], range(general_options["repetitions"])
         ),
-        total=len(general_options["m_obss"]) * general_options["repititions"],
+        total=len(general_options["m_obss"]) * general_options["repetitions"],
     ):
-        # print(f"Running repetition {n_data, rep}")
-
-        data = generate_data_from_dag(
-            m_obs=n_data, W=general_options["w_true"], seed=rep
-        )
+        np.random.seed(rep)
+        data = generate_data(G=G, n=n_data)
         data_cov = np.cov(data, rowvar=False)
         result = relaxed_notears(
             data_cov,
@@ -197,7 +196,6 @@ def run_experiment(general_options, notears_options):
     ax.set_xlabel("Theoretical Quantile")
     ax.set_ylabel("Actual Quantile")
     fig.savefig(output_folder.joinpath("ace_normal_plot.png"))
-    # plt.show()
 
     for n in df.n.unique():
         shapiro_wilk_stat, shapiro_wilk_p = scipy.stats.shapiro(df["ace_n"][df.n == n])
@@ -213,25 +211,39 @@ def run_experiment(general_options, notears_options):
     )
     df.to_csv(output_folder.joinpath("results.csv"))
 
-    #   Wrap up
-    #
-    #
-    t_end = datetime.datetime.now()
-    print(f"### END RUN ### Run time: {str(t_end - t_start).split('.')[0]}")
-    return df
 
-
-if __name__ == "__main__":
-    d = 4
+def parse_args():
     general_options = dict()
     general_options["confidence_level"] = 0.05  # alpha. 95% confidence ===> alpha=.05
     general_options["m_obss"] = [10 ** 2, 10 ** 4]
-    general_options["m_obs_for_gamma0_computation"] = 10 ** 7
     general_options["dag_tolerance_epsilon"] = 1e-7
     general_options["w_true"] = selected_graphs["calibration"]
-    general_options["repititions"] = 1000
+    general_options["repetitions"] = 1000
 
     notears_options = dict()
     notears_options["nitermax"] = 1000
+    notears_options["tolerated_constraint_violation"] = 1e-15
+    notears_options["verbose"] = False
+    notears_options["lbfgs_ftol"] = 1e-10
+    notears_options["lbfgs_gtol"] = 1e-6
+    return general_options, notears_options
 
-    experiment_result = run_experiment(general_options, notears_options)
+
+def main():
+    t_start = datetime.datetime.now()
+    general_options, notears_options = parse_args()
+    output_folder = Path("output").joinpath(
+        f"calibration_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+    )
+    os.makedirs(output_folder)
+    pp = pprint.PrettyPrinter(indent=4)
+    with open(output_folder.joinpath(fname_c), "w") as f:
+        f.write(pp.pformat(general_options) + "\n")
+        f.write(pp.pformat(notears_options) + "\n")
+    run_experiment(general_options, notears_options, output_folder)
+    t_end = datetime.datetime.now()
+    print(f"### END RUN ### Run time: {str(t_end - t_start).split('.')[0]}")
+
+
+if __name__ == "__main__":
+    main()
