@@ -36,6 +36,8 @@ def run_experiment(opts, output_folder):
     #
     notears_options = dict()
     notears_options["tolerated_constraint_violation"] = 1e-12
+    notears_options["lbfgs_ftol"] = opts.ftol
+    notears_options["lbfgs_gtol"] = opts.gtol
     dag_tolerance_epsilons = np.logspace(
         np.log10(opts.eps_min), np.log10(opts.eps_max), opts.n_eps
     )
@@ -374,13 +376,13 @@ def parse_args():
     )
     p.add_argument(
         "--eps_min",
-        default=1e-11,
+        default=1e-9,
         type=float,
         help="The smallest dag tolerance under consideration",
     )
     p.add_argument(
         "--eps_max",
-        default=1,
+        default=10,
         type=float,
         help="The largest DAG tolerance under consideration",
     )
@@ -395,6 +397,18 @@ def parse_args():
         default=10,
         type=int,
         help="How many random graphs to compute for?",
+    )
+    p.add_argument(
+        "--ftol",
+        default=1e-10,
+        type=float,
+        help="The ftol parameter to pass to L-BFGS-B",
+    )
+    p.add_argument(
+        "--gtol",
+        default=1e-6,
+        type=float,
+        help="The ftol parameter to pass to L-BFGS-B",
     )
     opts = p.parse_args()
     return opts
