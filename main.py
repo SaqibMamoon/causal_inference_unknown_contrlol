@@ -53,17 +53,17 @@ def sensitivity():
         "--rand_graph",
         "4,1",
         "--eps_min",
-        "1e-12",
+        "1e-15",
         "--eps_max",
         "1e2",
         "--n_eps",
-        "30",
+        "50",
         "--n_graphs",
-        "10",
+        "20",
         "--ftol",
-        "1e-11",
+        "1e-15",
         "--gtol",
-        "1e-7",
+        "1e-13",
     ]
     subprocess.run(["exp-sensitivity"] + opts)
 

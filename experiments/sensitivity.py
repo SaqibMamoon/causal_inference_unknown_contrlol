@@ -2,7 +2,6 @@
 """
 import datetime
 import os
-import warnings
 import pathlib
 import pprint
 import argparse
@@ -69,8 +68,8 @@ def run_experiment(opts, output_folder):
         L_no_diag = make_L_no_diag(d_nodes)
         w_initial = np.zeros((d_nodes, d_nodes))
         h, grad_h = make_h_paramterized(L_no_diag)
-
-        tqdm.write(f"w_true = {w_true}")
+        theta_true = L_no_diag.T @ w_true.T.flatten()
+        ace_true = ace(theta_true, L_no_diag)
 
         id = np.eye(d_nodes)
         M = np.linalg.pinv(id - w_true.T)
@@ -88,17 +87,14 @@ def run_experiment(opts, output_folder):
             dag_tolerance_epsilons, desc="tolerance epsilon", leave=False
         ):
             if dag_tolerance >= h_star:
-                warnings.warn(
-                    f"The current dag tolerance will allow optimum in the interior."
-                    f" {dag_tolerance:.2g} >= {h_star:.2g}"
+                tqdm.write(
+                    f"Optimum in the interior. {dag_tolerance:.2g} >= {h_star:.2g}"
                 )
-
             result = relaxed_notears(
                 data_cov, L_no_diag, w_initial, dag_tolerance, notears_options
             )
             theta_notears = result["theta"]
             w_notears = result["w"]
-            theta_true = L_no_diag.T @ w_true.T.flatten()
             h_notears = h(theta_notears)
             assert result["success"], "Solving failed!"
             assert (
@@ -122,11 +118,7 @@ def run_experiment(opts, output_folder):
                 d_nodes=d_nodes,
                 data_cov=data_cov,
                 ace_notears=ace(theta_notears, L_no_diag),
-                ace_true=ace(theta_true, L_no_diag),
-                ace_err=ace(theta_notears, L_no_diag) - ace(theta_true, L_no_diag),
-                ace_abs_err=np.abs(
-                    ace(theta_notears, L_no_diag) - ace(theta_true, L_no_diag)
-                ),
+                ace_true=ace_true,
                 rho=result["rho"],
             )
             result_dicts.append(d)
@@ -135,22 +127,10 @@ def run_experiment(opts, output_folder):
         #
         #
         df_inner = pd.DataFrame(result_dicts)
+        result_dfs.append(df_inner)
         w_best = df_inner["w_notears"][
             df_inner["dag_tolerance"].idxmin()
         ]  # the one with smallest dag tolerance...
-        df_inner["max-metric"] = df_inner["w_notears"].apply(
-            lambda w: np.abs((w - w_true)).max()
-        )
-        df_inner["2-metric"] = df_inner["w_notears"].apply(
-            lambda w: np.linalg.norm(w - w_true, ord="fro")
-        )
-        df_inner["1-metric"] = df_inner["w_notears"].apply(
-            lambda w: np.abs((w - w_true)).sum()
-        )
-        df_inner["max-metric_star"] = np.abs((w_star - w_true)).max()
-        df_inner["2-metric_star"] = np.linalg.norm(w_star - w_true, ord="fro")
-        df_inner["1-metric_star"] = np.abs((w_star - w_true)).sum()
-        result_dfs.append(df_inner)
 
         draw_graph(
             w=w_true,
@@ -162,9 +142,9 @@ def run_experiment(opts, output_folder):
             title=f"$\\hat W$ for $\\epsilon={df_inner['dag_tolerance'].min()}$",
             out_path=output_folder.joinpath(f"{k}_w_best.png"),
         )
-        fig, axs = plt.subplots(1, 2)
-        ax1, ax2 = axs.flatten()
-        absmax = np.abs(w_best).max()
+        fig, axs = plt.subplots(1, 3)
+        ax1, ax2, ax3 = axs.flatten()
+        absmax = max(np.abs(w_best).max(), np.abs(w_true).max(), np.abs(w_star).max())
         plotopts = dict(
             cmap="PiYG",
             norm=matplotlib.colors.TwoSlopeNorm(vcenter=0, vmin=-absmax, vmax=absmax),
@@ -173,14 +153,25 @@ def run_experiment(opts, output_folder):
         ax1.set_title("w_notears")
         ax2.matshow(w_true, **plotopts)
         ax2.set_title("w_true")
-        fig.savefig(output_folder.joinpath(f"{k}_w_best_mat.png"))
+        ax3.matshow(w_star, **plotopts)
+        ax3.set_title("w_star")
+        fig.savefig(output_folder.joinpath(f"{k}_mats.png"))
         plt.close(fig)
-
-        printt(f"w_true_k: {w_true}")
-        printt(f"w_best_k: {w_best}")
 
     raw_path = output_folder.joinpath(fname_raw)
     df = pd.concat(result_dfs)
+    df["w_err"] = df["w_notears"] - df["w_true"]
+    df["w_err_star"] = df["w_star"] - df["w_true"]
+    df["max-metric"] = df["w_err"].apply(lambda w: np.abs(w).max())
+    df["2-metric"] = df["w_err"].apply(lambda w: np.linalg.norm(w, ord="fro"))
+    df["1-metric"] = df["w_err"].apply(lambda w: np.abs(w).sum())
+    df["max-metric_star"] = df["w_err_star"].apply(lambda w: np.abs(w).max())
+    df["2-metric_star"] = df["w_err_star"].apply(lambda w: np.linalg.norm(w, ord="fro"))
+    df["1-metric_star"] = df["w_err_star"].apply(lambda w: np.abs(w).sum())
+    df["ace_abs"] = np.abs(df["ace_notears"])
+    df["ace_abs_err"] = np.abs(df["ace_true"] - df["ace_notears"])
+    df["ace_err"] = df["ace_true"] - df["ace_notears"]
+    df["ace_true_zero"] = np.abs(df["ace_true"]) < 1e-14
     df.to_pickle(path=raw_path)
 
 
@@ -188,6 +179,10 @@ def post_process(output_folder):
     raw_path = output_folder.joinpath(fname_raw)
     df = pd.read_pickle(raw_path)
     generate_pgfplots_output(df, output_folder)
+
+    df.groupby("k")["h_star"].unique().astype(float).to_csv(
+        output_folder.joinpath("hstars.csv")
+    )
 
     fig = plt.figure("00")
     ax = fig.subplots()
@@ -211,57 +206,35 @@ def post_process(output_folder):
         )
         ax.axvline(a.h_star.unique(), linestyle="dotted", color=f"C{k}")
     ax.legend()
-    fig.show()
     fig.savefig(output_folder.joinpath(f"1-metric_thresh.png"))
     plt.close()
 
-    for m in ["max-metric", "2-metric", "1-metric"]:
-        fig = plt.figure(num=m)
-        ax = fig.subplots()
-        sns.lineplot(data=df, x="dag_tolerance", y=m, hue="k", ax=ax)
-        ax.set_xscale("log")
-        ax.set_yscale("log")
-        fig.show()
-        ax.legend_.remove()
-        fig.savefig(output_folder.joinpath(f"{m}.png"))
-        plt.close(fig)
-
-    fig = plt.figure("ace")
+    fig = plt.figure("ace_by_eps")
     ax = fig.subplots()
     sns.lineplot(data=df, y="ace_notears", x="dag_tolerance", hue="k", ax=ax)
     ax.set_xscale("log")
-    fig.show()
     fig.savefig(output_folder.joinpath(f"ace_by_eps.png"))
     plt.close()
 
-    fig = plt.figure("actual_h")
-    ax = fig.subplots()
-    sns.lineplot(data=df, y="h_notears", x="dag_tolerance", hue="k", ax=ax)
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    fig.show()
-    fig.savefig(output_folder.joinpath(f"actual_h.png"))
-    plt.close()
-
-    fig = plt.figure("aceerr")
+    fig = plt.figure("ace_abs_err")
     ax = fig.subplots()
     for k in df.k.unique():
-        a = df[df.k == k]
+        df_k = df[df.k == k]
         ax.plot(
-            a.dag_tolerance,
+            df_k.dag_tolerance,
             np.abs(a["ace_abs_err"]),
             linestyle="solid",
             marker=".",
             color=f"C{k}",
             label=f"$|\\gamma_{{true}} - \\gamma(\\hat w(\\varepsilon))|$, k={k}",
         )
-        ax.axvline(a.h_star.unique(), linestyle="dotted", color=f"C{k}")
+        ax.axvline(df_k.h_star.unique(), linestyle="dotted", color=f"C{k}")
     ax.set_xscale("log")
     ax.set_yscale("log")
-    fig.show()
     fig.savefig(output_folder.joinpath(f"ace_abs_err.png"))
     plt.close()
 
+    plot_log_stuff(df, output_folder)
     plot_cross_sections([8, 11], df, output_folder)
 
     print(f"Finished outputting")
@@ -269,16 +242,56 @@ def post_process(output_folder):
 
 def generate_pgfplots_output(df, output_folder):
     pgf_path = output_folder.joinpath(fname_pgf)
-    df.pivot(index="dag_tolerance", columns="k", values="ace_abs_err").to_csv(pgf_path)
+    pivot = df.pivot(
+        index="dag_tolerance",
+        columns="k",
+        values=["ace_abs_err", "max-metric", "h_notears", "ace_abs"],
+    )
+    pivot.columns = ["-".join(map(str, col)).strip() for col in pivot.columns.values]
+    pivot.to_csv(pgf_path)
+
+
+def plot_log_stuff(df, output_folder):
+    df2 = (
+        df[
+            [
+                "k",
+                "ace_abs",
+                "1-metric",
+                "dag_tolerance",
+                "h_notears",
+                "ace_abs_err",
+                "ace_true_zero",
+                "2-metric",
+                "max-metric",
+            ]
+        ]
+        .melt(id_vars=["k", "dag_tolerance", "ace_true_zero"])
+        .astype({"k": str})
+    )
+    fgrid = sns.relplot(
+        data=df2,
+        x="dag_tolerance",
+        y="value",
+        kind="line",
+        col="variable",
+        style="ace_true_zero",
+        facet_kws={"sharex": True, "sharey": False},
+        hue="k",
+        col_wrap=2,
+    )
+    fgrid.set(xscale="log", yscale="log")
+    fgrid.savefig(output_folder.joinpath(f"loglogs.png"))
+    plt.close()
 
 
 def plot_cross_sections(idxs, df, output_folder):
     for k in df.k.unique():
-        a = df[df.k == k]
-        thetas = np.array(a.theta_notears.to_list())
+        df_k = df[df.k == k]
+        thetas = np.array(df_k.theta_notears.to_list())
         d_nodes = df.d_nodes.unique().item()
-        theta_true = a.theta_true[0]
-        data_cov = a.data_cov[0]
+        theta_true = df_k.theta_true[0]
+        data_cov = df_k.data_cov[0]
         maximum = max(thetas[:, idxs].max(), theta_true[idxs].max())
         minimum = min(thetas[:, idxs].min(), theta_true[idxs].min())
         corner0 = maximum * 1.2 + 0.1
@@ -307,7 +320,7 @@ def plot_cross_sections(idxs, df, output_folder):
             fig = plt.figure(f"00{k}")
             ax = fig.subplots()
             norm = matplotlib.colors.LogNorm(
-                vmin=a.dag_tolerance.min(), vmax=a.dag_tolerance.max()
+                vmin=df_k.dag_tolerance.min(), vmax=df_k.dag_tolerance.max()
             )
             cmap = plt.get_cmap("viridis")
             resolution = 100
@@ -317,7 +330,10 @@ def plot_cross_sections(idxs, df, output_folder):
                 bbox,
                 resolution,
                 contour_opts=dict(
-                    norm=norm, levels=sorted(a.h_notears), alpha=0.7, cmap=cmap
+                    norm=norm,
+                    levels=sorted(df_k.h_notears.unique()),
+                    alpha=0.7,
+                    cmap=cmap,
                 ),
             )
             plot_contours_in_2d(
@@ -344,7 +360,7 @@ def plot_cross_sections(idxs, df, output_folder):
             s = ax.scatter(
                 x=thetas[:, idxs[0]],
                 y=thetas[:, idxs[1]],
-                c=a.h_notears,
+                c=df_k.h_notears,
                 norm=norm,
                 cmap=cmap,
                 marker="x",
