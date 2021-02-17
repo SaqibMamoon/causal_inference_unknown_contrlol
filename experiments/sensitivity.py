@@ -32,11 +32,6 @@ fname_pgf = "dagtol_pgfplots.csv"
 
 
 def run_experiment(opts, output_folder):
-    #
-    #
-    # Initialize
-    #
-    #
     notears_options = dict()
     notears_options["tolerated_constraint_violation"] = 1e-12
     notears_options["lbfgs_ftol"] = opts.ftol
@@ -101,8 +96,8 @@ def run_experiment(opts, output_folder):
                 h_notears
                 < dag_tolerance + notears_options["tolerated_constraint_violation"]
             ), (
-                f"h_notears >= dag_tolerance, {h_notears} >= "
-                f"{dag_tolerance + notears_options['tolerated_constraint_violation']}"
+                f"h_notears >= dag_tolerance + rho, {h_notears} >= "
+                f"{dag_tolerance} + {notears_options['tolerated_constraint_violation']}"
             )
             d = dict(
                 theta_notears=theta_notears,
