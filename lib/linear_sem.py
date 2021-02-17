@@ -24,27 +24,6 @@ def ace(theta, L):
     return M[1, 0]
 
 
-def generate_data_from_dag(m_obs: int, W: np.ndarray, seed: int = None) -> np.ndarray:
-    """Take n samples from a linear SEM parametrized by w
-
-    if seed=None, then no seed is set when generating the data
-    rows in output = observations
-    """
-    d = W.shape[0]
-    assert d >= 2
-    assert W.shape[1] == d
-    sigma = np.eye(d)
-    mu = np.zeros(d)
-    mean_true = np.linalg.inv(np.eye(d) - W.transpose()) @ mu
-    cov_true = (
-        np.linalg.inv(np.eye(d) - W.transpose()) @ sigma @ np.linalg.inv(np.eye(d) - W)
-    )  # the true variance of the data
-    if seed:
-        np.random.seed(seed)  # setting the seed means we get the same rows every time
-    data = np.random.multivariate_normal(mean=mean_true, cov=cov_true, size=m_obs)
-    return data
-
-
 def ace_grad(theta, L):
     """Compute the gradient of the causal effect
     under linearity assumptions and vec(W)=L@theta"""
@@ -65,18 +44,10 @@ def ace_grad(theta, L):
 selected_graphs = {
     "2forward": np.array([[0, 0.4], [0, 0]]),
     "2backwards": np.array([[0, 0], [0.4, 0]]),
-    "3fork": np.array([[0, 0.4, 0], [0, 0, 0], [0.7, 0.2, 0]]),  # dense v model - fork!
-    "3path": np.array([[0, 0.4, 0.7], [0, 0, 0], [0, 0.2, 0]]),  # dense v model - path!
-    "3collider": np.array(
-        [[0, 0, 0.7], [0, 0, 0.2], [0, 0, 0]]
-    ),  # dense v model - path!
-    "3path stronger": 10
-    * np.array([[0, 0.4, 0.7], [0, 0, 0], [0, 0.2, 0]]),  # dense v model - path!
-    "3path possible": np.array([[0, 0.4, 0.7], [0, 0, 0], [0, 0, 0]]),
-    "3path possible backwards": np.array([[0, 0, 0.7], [0.4, 0, 0], [0, 0, 0]]),
-    "4collider": np.array(
-        [[0, 0, 1, 0], [0, 0, 1, 0], [0, 0, 0, 0], [1, 1, 0, 0]]
-    ),  # one fork, one collider
+    "3fork": np.array([[0, 0.4, 0], [0, 0, 0], [0.7, 0.2, 0]]),
+    "3mediator": np.array([[0, 0.4, 0.7], [0, 0, 0], [0, 0.2, 0]]),
+    "3collider": np.array([[0, 0, 0.7], [0, 0, 0.2], [0, 0, 0]]),
+    "4collider": np.array([[0, 0, 1, 0], [0, 0, 1, 0], [0, 0, 0, 0], [1, 1, 0, 0]]),
     "calibration": np.array(
         [
             [0.0, -1.0, 1.6, 0.0],
@@ -84,5 +55,5 @@ selected_graphs = {
             [0.0, 1.2, 0.0, -0.5],
             [0.0, 0.0, 0.0, 0.0],
         ]
-    ),  # for the experiment on calibration
+    ),
 }

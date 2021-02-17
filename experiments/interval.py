@@ -5,17 +5,36 @@ the method described in the article: point estimation plus the delta method.
 import datetime
 import pickle
 import os
+from pathlib import Path
+import argparse
+import pprint
 
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats
+import networkx as nx
 
 from lib.relaxed_notears import relaxed_notears, mest_covarance, h
 from lib.linear_algebra import make_L_no_diag
-from lib.linear_sem import ace, ace_grad, generate_data_from_dag, selected_graphs
-import lib.ols
+from lib.linear_sem import ace, ace_grad, selected_graphs
+from lib.ols import myOLS
 from lib.plotters import draw_graph
+from lib.daggnn_util import simulate_sem
+
+fname_c = "config.txt"
+
+
+def generate_data(W, n):
+    G = nx.DiGraph(W)
+    return simulate_sem(
+        G=G,
+        n=n,
+        x_dims=1,
+        sem_type="linear-gauss",
+        linear_type="linear",
+        noise_scale=1,
+    ).squeeze()
 
 
 def plot_trend(df, gamma_circ, fname=None):
@@ -51,49 +70,23 @@ def plot_trend(df, gamma_circ, fname=None):
         plt.close(fig)
 
 
-def run_experiment(general_options, notears_options):
-    #
-    #
-    # Initialize
-    #
-    #
-    output_folder = (
-        f"output/interval_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
-        f" {general_options['batch_name']}"
-    )
-    os.mkdir(output_folder)
-
-    t_start = datetime.datetime.now()
-    print(f"RUN START")
-
-    #
-    #
-    # Set up
-    #
-    #
-    print("Entering Set Up")
-    d_nodes = general_options["w_true"].shape[0]
+def run_experiment(opts, output_folder: Path):
+    d_nodes = opts.w_true.shape[0]
     L_no_diag = make_L_no_diag(d_nodes)
     w_initial = np.zeros((d_nodes, d_nodes))
+    m_obss = np.logspace(
+        start=np.log10(opts.n_data_min),
+        stop=np.log10(opts.n_data_max),
+        num=opts.n_n_data,
+        dtype="int",
+    )
 
-    print(f"Outputting to folder {output_folder}")
-    print(f"General options {general_options}")
-    print(f"Notears options {notears_options}")
-
-    #
-    #
-    # Do the work
-    #
-    #
-    m_obs = general_options["m_obss"][-1] * 10
-    data = generate_data_from_dag(m_obs=m_obs, W=general_options["w_true"], seed=None)
+    m_obs = m_obss[-1] * 10
+    data = generate_data(n=m_obs, W=opts.w_true)
     data_cov = np.cov(data, rowvar=False)
+    notears_options = {}
     result_circ = relaxed_notears(
-        data_cov,
-        L_no_diag,
-        w_initial,
-        general_options["dag_tolerance_epsilon"],
-        notears_options,
+        data_cov, L_no_diag, w_initial, opts.dag_tolerance, notears_options,
     )
     theta_circ, w_circ, success = (
         result_circ["theta"],
@@ -105,25 +98,19 @@ def run_experiment(general_options, notears_options):
     draw_graph(
         w=w_circ,
         title=f"$\\gamma_{{{m_obs}}}={ace_circ:.2f}$",
-        out_path=os.path.join(output_folder, f"w_notears_{m_obs}.png"),
+        out_path=output_folder.joinpath(f"w_notears_{m_obs}.png"),
     )
-    with open(os.path.join(output_folder, f"ace_circ.pkl"), mode="wb") as f:
+    with open(output_folder.joinpath(f"ace_circ.pkl"), mode="wb") as f:
         pickle.dump(file=f, obj=ace_circ)
 
     result_dicts = []
-    for m_obs in general_options["m_obss"]:
-        print(f"Starting handling of {general_options['batch_name']}, n={m_obs}.")
-        data = generate_data_from_dag(
-            m_obs=m_obs, W=general_options["w_true"], seed=None
-        )
+    for m_obs in m_obss:
+        print(f"Starting handling of {opts.named_graph}, n={m_obs}.")
+        data = generate_data(W=opts.w_true, n=m_obs)
         print("Computing Notears solution")
         data_cov = np.cov(data, rowvar=False)
         result = relaxed_notears(
-            data_cov,
-            L_no_diag,
-            w_initial,
-            general_options["dag_tolerance_epsilon"],
-            notears_options,
+            data_cov, L_no_diag, w_initial, opts.dag_tolerance, notears_options,
         )
         theta_notears, w_notears, success = (
             result["theta"],
@@ -133,12 +120,12 @@ def run_experiment(general_options, notears_options):
         draw_graph(
             w=w_notears,
             title=f"$\\gamma_{{{m_obs}}}={(ace(theta_notears, L_no_diag)).item():.2f}$",
-            out_path=os.path.join(output_folder, f"w_notears_{m_obs}.png"),
+            out_path=output_folder.joinpath(f"w_notears_{m_obs}.png"),
         )
         print(f"w_notears: {w_notears}")
         print(
             f"h(w_notears): {h(w_notears)}, compare with"
-            f" DAG tolerance {general_options['dag_tolerance_epsilon']}"
+            f" DAG tolerance {opts.dag_tolerance}"
         )
         print(f"$\\gamma_{{{m_obs}}}$={(ace(theta_notears, L_no_diag))}")
 
@@ -159,13 +146,13 @@ def run_experiment(general_options, notears_options):
         print("Computing the OLS solution")
         regressors = np.delete(data, 1, axis=1)
         outcomes = data[:, 1]
-        ols_result = lib.ols.myOLS(X=regressors, y=outcomes)
+        ols_result = myOLS(X=regressors, y=outcomes)
         ols_direct_causal_effect, ols_standard_error = (
             ols_result["params"][0],
             ols_result["HC0_se"][0],
         )
 
-        q = scipy.stats.norm.ppf(1 - np.array(general_options["confidence_level"]) / 2)
+        q = scipy.stats.norm.ppf(1 - np.array(opts.confidence_level) / 2)
 
         print("Saving results")
         d = dict(
@@ -178,16 +165,16 @@ def run_experiment(general_options, notears_options):
             q_ols_standard_error=q * ols_standard_error,
             q=q,
             ace_circ=ace_circ,
-            confidence_level=general_options["confidence_level"],
+            confidence_level=opts.confidence_level,
         )
         result_dicts.append(d)
 
     print("Completed the optimization. On to plotting!")
     df = pd.DataFrame(result_dicts)
-    df.to_csv(os.path.join(output_folder, "summary.csv"))
+    df.to_csv(output_folder.joinpath("summary.csv"))
 
     print(f"start plotting trend graph")
-    fname = os.path.join(output_folder, "asymptotics.png")
+    fname = output_folder.joinpath("asymptotics.png")
     plot_trend(df, ace_circ, fname)
     print(f"Finished plotting the trend graph")
 
@@ -196,36 +183,46 @@ def run_experiment(general_options, notears_options):
     #   Post process after completion of all runs (produce plots and save)
     #
     #
-    gamma_true = ace(
-        general_options["w_true"].T.flatten(), L=np.eye(d_nodes ** 2)
-    ).item()
+    gamma_true = ace(opts.w_true.T.flatten(), L=np.eye(d_nodes ** 2)).item()
     print(f"\\gamma={gamma_true}")
     draw_graph(
-        w=general_options["w_true"],
+        w=opts.w_true,
         title=f"$\\gamma={gamma_true:.2f}",
-        out_path=os.path.join(output_folder, f"w_true.png"),
+        out_path=output_folder.joinpath(f"w_true.png"),
     )
 
-    #
-    #
-    #   Wrap up
-    #
-    #
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--named_graph", default="4collider", type=str)
+    p.add_argument("--confidence_level", default=0.05, type=float)
+    p.add_argument("--n_data_min", default=10 ** 2, type=int)
+    p.add_argument("--n_data_max", default=10 ** 5, type=int)
+    p.add_argument("--n_n_data", default=10, type=int)
+    p.add_argument(
+        "--dag_tolerance", default=1e-7, type=float, help="The epsilon-value we aim for"
+    )
+    opts = p.parse_args()
+
+    return opts
+
+
+def main():
+    t_start = datetime.datetime.now()
+    opts = parse_args()
+    opts.w_true = selected_graphs["4collider"]
+    output_folder = Path("output").joinpath(
+        f"interval_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+        f" {opts.named_graph}"
+    )
+    os.makedirs(output_folder)
+    pp = pprint.PrettyPrinter(indent=4)
+    with open(output_folder.joinpath(fname_c), "w") as f:
+        f.write(pp.pformat(opts) + "\n")
+    run_experiment(opts, output_folder)
     t_end = datetime.datetime.now()
     print(f"END RUN === Run time: {str(t_end - t_start).split('.')[0]}")
 
 
 if __name__ == "__main__":
-    print("Recording options")
-    general_options = dict()
-    general_options["confidence_level"] = 0.05  # alpha. 95% confidence ===> alpha=.05
-    general_options["m_obss"] = np.logspace(start=2, stop=5, num=10, dtype="int")
-    general_options["dag_tolerance_epsilon"] = 1e-8
-
-    notears_options = dict()
-    notears_options["nitermax"] = 1000
-    if True:
-        for name, w_true in selected_graphs.items():
-            general_options["w_true"] = w_true
-            general_options["batch_name"] = name
-            run_experiment(general_options, notears_options)
+    main()
