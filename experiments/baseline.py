@@ -268,8 +268,8 @@ def post_process(output_folder):
         lambda x: f"{x['p']:7.2%} ({x['pmin']:7.2%},{x['pmax']:7.2%})", axis=1
     ).to_frame("CR")
     avg_w = df.groupby(dimensions)["ci_width"].mean().to_frame("Avg CI width")
-    avg_w = df.groupby(dimensions)["ace"].mean().to_frame("Avg ACE est")
-    summary = pd.concat([cr_nice, avg_w], axis=1)
+    avg_ace = df.groupby(dimensions)["ace"].mean().to_frame("Avg ACE est")
+    summary = pd.concat([cr_nice, avg_w, avg_ace], axis=1)
 
     summ_path = output_folder.joinpath(summary_fname)
     with open(summ_path, "w") as f:
