@@ -5,7 +5,8 @@ the point estimate is approximately normal.
 
 import datetime
 import os
-import itertools
+from argparse import ArgumentParser
+from itertools import product
 from pathlib import Path
 import pprint
 
@@ -59,7 +60,7 @@ def check_epsilon(w_true, L_parametrization, general_options):
 
 
 def generate_data(G, n):
-    return simulate_sem(
+    data = simulate_sem(
         G=G,
         n=n,
         x_dims=1,
@@ -67,6 +68,7 @@ def generate_data(G, n):
         linear_type="linear",
         noise_scale=1,
     ).squeeze()
+    return data
 
 
 def run_experiment(general_options, notears_options, output_folder):
@@ -99,9 +101,7 @@ def run_experiment(general_options, notears_options, output_folder):
 
     result_dicts = []
     for n_data, rep in tqdm(
-        itertools.product(
-            general_options["m_obss"], range(general_options["repetitions"])
-        ),
+        product(general_options["m_obss"], range(general_options["repetitions"])),
         total=len(general_options["m_obss"]) * general_options["repetitions"],
     ):
         np.random.seed(rep)
@@ -179,7 +179,7 @@ def run_experiment(general_options, notears_options, output_folder):
         ax.plot(
             df.loc[df.n == n, "ace_n_theoretical_z"],
             df.loc[df.n == n, "ace_n_z"],
-            label=f"Actual (n={n}",
+            label=f"Actual (n={n})",
             marker="o",
             linestyle="none",
         )
@@ -213,12 +213,18 @@ def run_experiment(general_options, notears_options, output_folder):
 
 
 def parse_args():
+    p = ArgumentParser()
+    p.add_argument(
+        "--repetitions", default=1000, type=int, help="How many monte carlo runs?"
+    )
+    opts = p.parse_args()
+
     general_options = dict()
     general_options["confidence_level"] = 0.05  # alpha. 95% confidence ===> alpha=.05
     general_options["m_obss"] = [10 ** 2, 10 ** 4]
     general_options["dag_tolerance_epsilon"] = 1e-7
     general_options["w_true"] = selected_graphs["calibration"]
-    general_options["repetitions"] = 1000
+    general_options["repetitions"] = opts.repetitions
 
     notears_options = dict()
     notears_options["nitermax"] = 1000
