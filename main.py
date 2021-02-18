@@ -72,9 +72,15 @@ def calibration():
     subprocess.run(["exp-calibration"])
 
 
+def interval():
+    subprocess.run(["exp-interval", "--named_graph", "4collider"])
+    subprocess.run(["exp-interval", "--named_graph", "3fork"])
+
+
 def main():
     cmds = {
-        q.__name__: q for q in [clean, nonlinear, baseline, sensitivity, calibration]
+        q.__name__: q
+        for q in [clean, nonlinear, baseline, sensitivity, calibration, interval]
     }
 
     p = argparse.ArgumentParser()

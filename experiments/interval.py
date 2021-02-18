@@ -26,9 +26,8 @@ fname_c = "config.txt"
 
 
 def generate_data(W, n):
-    G = nx.DiGraph(W)
     return simulate_sem(
-        G=G,
+        G=nx.DiGraph(W),
         n=n,
         x_dims=1,
         sem_type="linear-gauss",
@@ -71,7 +70,8 @@ def plot_trend(df, gamma_circ, fname=None):
 
 
 def run_experiment(opts, output_folder: Path):
-    d_nodes = opts.w_true.shape[0]
+    w_true = selected_graphs[opts.named_graph]
+    d_nodes = w_true.shape[0]
     L_no_diag = make_L_no_diag(d_nodes)
     w_initial = np.zeros((d_nodes, d_nodes))
     m_obss = np.logspace(
@@ -82,7 +82,7 @@ def run_experiment(opts, output_folder: Path):
     )
 
     m_obs = m_obss[-1] * 10
-    data = generate_data(n=m_obs, W=opts.w_true)
+    data = generate_data(n=m_obs, W=w_true)
     data_cov = np.cov(data, rowvar=False)
     notears_options = {}
     result_circ = relaxed_notears(
@@ -106,8 +106,7 @@ def run_experiment(opts, output_folder: Path):
     result_dicts = []
     for m_obs in m_obss:
         print(f"Starting handling of {opts.named_graph}, n={m_obs}.")
-        data = generate_data(W=opts.w_true, n=m_obs)
-        print("Computing Notears solution")
+        data = generate_data(W=w_true, n=m_obs)
         data_cov = np.cov(data, rowvar=False)
         result = relaxed_notears(
             data_cov, L_no_diag, w_initial, opts.dag_tolerance, notears_options,
@@ -129,9 +128,7 @@ def run_experiment(opts, output_folder: Path):
         )
         print(f"$\\gamma_{{{m_obs}}}$={(ace(theta_notears, L_no_diag))}")
 
-        print("Computing precision")
         covariance_matrix = mest_covarance(w_notears, data_cov, L_no_diag)
-        print("Computing ace")
         gradient_of_ace_with_respect_to_theta = ace_grad(
             theta=theta_notears, L=L_no_diag
         )
@@ -154,7 +151,6 @@ def run_experiment(opts, output_folder: Path):
 
         q = scipy.stats.norm.ppf(1 - np.array(opts.confidence_level) / 2)
 
-        print("Saving results")
         d = dict(
             m_obs=m_obs,
             ace_value=ace_value,
@@ -183,10 +179,10 @@ def run_experiment(opts, output_folder: Path):
     #   Post process after completion of all runs (produce plots and save)
     #
     #
-    gamma_true = ace(opts.w_true.T.flatten(), L=np.eye(d_nodes ** 2)).item()
+    gamma_true = ace(w_true.T.flatten(), L=np.eye(d_nodes ** 2)).item()
     print(f"\\gamma={gamma_true}")
     draw_graph(
-        w=opts.w_true,
+        w=w_true,
         title=f"$\\gamma={gamma_true:.2f}",
         out_path=output_folder.joinpath(f"w_true.png"),
     )
@@ -210,7 +206,6 @@ def parse_args():
 def main():
     t_start = datetime.datetime.now()
     opts = parse_args()
-    opts.w_true = selected_graphs["4collider"]
     output_folder = Path("output").joinpath(
         f"interval_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
         f" {opts.named_graph}"
