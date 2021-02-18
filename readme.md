@@ -1,18 +1,18 @@
-# Stuffs
+Code relevant for the article https://arxiv.org/abs/2012.08154
 
-The code base is managed by `conda` since that gives simple installation for `numpy` and `scipy`.
-The local code is only python, so it is installed as a `pip` editable package, to make sure imports work as they should.
-Some dev-dependencies are included, notably `flake8` and `black`, but they are not needed for running the code really...
+# Installation and running
 
 1. Make sure you have `conda` installed (anaconda or miniconda as you like)
-1. Install the conda environment by `conda  env create --file environment.yml`
-1. When developing/making updates, do so via `conda env update --file environment.yml --prune`
-1. Do linting using flake8, by `flake8` from command line (or via your IDE)
-1. Do formatting using black, by `black .` from command line (or via your IDE)
+2. Create the conda environment by `conda env create --file environment.yml`. This also installs the current folder as a `pip` package, with some new command `run` and `exp-baseline` etc.
+3. To reproduce data and plots from the article, run `run baseline`, `run sensitivity` etc.
+4. To run the experiments with other settings, run `exp-sensitivity --setting value` etc. You can get all available options with `exp-sensitivity --help`
+5. Output is stored in the `./output` folder. You can clear it with `run clean`.
 
-To run any code, run `python ./experiments/<experiment_name>.py` **from the root**.
-Some of the experiments take command line options, e.g. `python ./experiments/<experiment_name>.py --option1 20`. Run `python ./experiments/<experiment_name>.py -h` to see the available options.
-Output is put in the `./output` folder.
-There is also a `run` command installed, so `run clean` will clean all the output.
+# Development
 
-Test are written in `unittest` so `python -m unittest` will run them via discovery. Some tests has been removed since I didn't touch the code like in... forever...
+Some dev-dependencies are included in the conda environment: `flake8` and `black`.
+
+1. When making updates to the environment, do so in the `environment.yml` file, and then run `conda env update --file environment.yml --prune`
+2. Do linting using flake8, by `flake8` from command line (or via your IDE). `flake8` options are managed in `setup.cfg`.
+3. Do formatting using black, by `black .` from command line (or via your IDE). All options are default (and should be!).
+4. Test are written in `unittest` so `python -m unittest` will run them via discovery. Most code was tested manually in another repository, and wasn't migrated to here.
